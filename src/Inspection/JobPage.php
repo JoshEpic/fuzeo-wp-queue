@@ -16,6 +16,7 @@ final class JobPage
         public readonly int $limit,
         public readonly int $offset,
         public readonly ?int $total = null,
+        public readonly bool $truncated = false,
     ) {
     }
 }

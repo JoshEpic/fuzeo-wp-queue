@@ -121,9 +121,7 @@ final class MySqlDriverTest extends MysqlTestCase
         self::assertIsString($chosen['job_id'] ?? null);
 
         $this->connection->begin();
-        $isolation = $this->connection->selectOne('SELECT @@transaction_isolation AS iso');
-        $iso = strtoupper(str_replace([' ', '_'], '-', (string) ($isolation['iso'] ?? '')));
-        self::assertSame('READ-COMMITTED', $iso);
+        self::assertSame('READ-COMMITTED', $this->sessionIsolation());
 
         $locked = $this->connection->selectOne(
             'SELECT * FROM ' . $jobs . ' WHERE `job_id` = ? FOR UPDATE',

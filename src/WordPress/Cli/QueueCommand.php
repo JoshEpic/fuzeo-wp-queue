@@ -826,6 +826,30 @@ final class QueueCommand
     }
 
     /**
+     * Operator support snapshot. Safe to paste into a GitHub issue. Never includes job payloads.
+     *
+     * ## OPTIONS
+     *
+     * [--format=<format>]
+     * : table or json. json is recommended for bug reports.
+     *
+     * @param array<int, string> $args
+     * @param array<string, string> $assoc
+     */
+    public function diagnostics(array $args, array $assoc): void
+    {
+        unset($args);
+        $ops = Coordinator::get()->operations();
+        $payload = $ops->diagnostics(\Fuzeo\Queue\Operations\Operator::cli());
+        $payload['runtime_diagnostics'] = array_map(
+            static fn ($row) => (array) $row,
+            Coordinator::diagnostics()
+        );
+        $assoc['format'] = $assoc['format'] ?? 'json';
+        $this->emit($payload, $assoc);
+    }
+
+    /**
      * Reconcile chain/batch progression after crashes.
      *
      * @param array<int, string> $args

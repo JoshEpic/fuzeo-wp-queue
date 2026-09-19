@@ -253,7 +253,11 @@ final class Coordinator
         $connection ??= self::detectConnection($config);
         self::$connection = $connection;
         $driver ??= self::makeDriver($config, $clock, $connection);
-        $serializer = new JsonPayloadSerializer(new PayloadLimits($config->maxPayloadBytes, $config->maxPayloadDepth));
+        $serializer = new JsonPayloadSerializer(new PayloadLimits(
+            $config->maxPayloadBytes,
+            $config->maxPayloadDepth,
+            $config->maxPayloadStringBytes,
+        ));
 
         return new QueueManager(
             config: $config,
@@ -287,7 +291,7 @@ final class Coordinator
                 'driver_switch',
                 'Queue driver changed from ' . $previous . ' to ' . $driver
                 . '. Outstanding jobs, schedules, uniqueness claims, and idempotency state are not migrated.'
-                . ' Drain or inspect the previous backend before switching. Automatic migration is unsupported in 0.5.'
+                . ' Drain or inspect the previous backend before switching. Automatic backend migration is unsupported.'
             );
         }
         self::kernelSet('active_driver', $driver);

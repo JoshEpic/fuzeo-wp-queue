@@ -306,79 +306,36 @@ final class MysqlOrchestrationStore implements OrchestrationStore
             }
             $previous = MemberStatus::from((string) $memberRow['status']);
             $batch = $this->hydrateBatch($batchRow);
-            $completed = $batch->completedJobs;
-            $failed = $batch->failedJobs;
-            $cancelled = $batch->cancelledJobs;
-            if ($previous === $status && in_array($previous, [MemberStatus::Completed, MemberStatus::Dead, MemberStatus::Cancelled, MemberStatus::UniqueConflict], true)) {
+            $progress = BatchCounters::apply($batch, $previous, $status, $this->clock->now());
+            if ($previous === $status && $progress->batch === $batch && !$progress->justFinalized) {
                 $this->connection->commit();
 
-                return new BatchProgress($batch, false);
-            }
-            if ($previous === MemberStatus::Completed) {
-                $completed--;
-            }
-            if ($previous === MemberStatus::Dead || $previous === MemberStatus::UniqueConflict) {
-                $failed--;
-            }
-            if ($previous === MemberStatus::Cancelled) {
-                $cancelled--;
+                return $progress;
             }
             $this->connection->execute(
                 'UPDATE ' . $this->members() . ' SET `status` = ? WHERE `batch_id` = ? AND `member_index` = ?',
                 [$status->value, $batchId, $index]
             );
-            if ($status === MemberStatus::Completed) {
-                $completed++;
-            }
-            if ($status === MemberStatus::Dead || $status === MemberStatus::UniqueConflict) {
-                $failed++;
-            }
-            if ($status === MemberStatus::Cancelled) {
-                $cancelled++;
-            }
-            $now = $this->clock->now();
-            $state = $batch->state;
-            $just = false;
-            $completedAt = $batch->completedAt;
-            $failedAt = $batch->failedAt;
-            $cancelledAt = $batch->cancelledAt;
-            $terminal = ($completed + $failed + $cancelled) >= $batch->totalJobs && $batch->totalJobs > 0;
-            if ($terminal && ($state === BatchState::Active || $state === BatchState::Creating || $state === BatchState::Failed)) {
-                if ($batch->cancelRequested) {
-                    $state = BatchState::Cancelled;
-                    $cancelledAt = $cancelledAt ?? $now;
-                } elseif ($failed > 0) {
-                    $state = BatchState::Failed;
-                    $failedAt = $failedAt ?? $now;
-                } else {
-                    $state = BatchState::Completed;
-                    $completedAt = $completedAt ?? $now;
-                }
-                $just = $batch->state !== $state;
-            } elseif ($status === MemberStatus::Dead && $batch->failurePolicy === BatchFailurePolicy::FailFast && $state === BatchState::Active) {
-                $state = BatchState::Failed;
-                $failedAt = $now;
-            }
+            $updated = $progress->batch;
             $this->connection->execute(
                 'UPDATE ' . $this->batches() . '
                  SET `completed_jobs` = ?, `failed_jobs` = ?, `cancelled_jobs` = ?, `state` = ?,
                      `completed_at` = ?, `failed_at` = ?, `cancelled_at` = ?
                  WHERE `batch_id` = ?',
                 [
-                    max(0, $completed),
-                    max(0, $failed),
-                    max(0, $cancelled),
-                    $state->value,
-                    $completedAt !== null ? Dates::toDatabase($completedAt) : null,
-                    $failedAt !== null ? Dates::toDatabase($failedAt) : null,
-                    $cancelledAt !== null ? Dates::toDatabase($cancelledAt) : null,
+                    $updated->completedJobs,
+                    $updated->failedJobs,
+                    $updated->cancelledJobs,
+                    $updated->state->value,
+                    $updated->completedAt !== null ? Dates::toDatabase($updated->completedAt) : null,
+                    $updated->failedAt !== null ? Dates::toDatabase($updated->failedAt) : null,
+                    $updated->cancelledAt !== null ? Dates::toDatabase($updated->cancelledAt) : null,
                     $batchId,
                 ]
             );
             $this->connection->commit();
-            $updated = $this->getBatch($batchId) ?? $batch;
 
-            return new BatchProgress($updated, $just);
+            return $progress;
         } catch (\Throwable $exception) {
             $this->connection->rollBack();
             throw $exception;

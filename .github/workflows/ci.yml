@@ -14,12 +14,18 @@ jobs:
           - php: '8.1'
             db: mysql
             image: mysql:8.0
+          - php: '8.1'
+            db: mariadb
+            image: mariadb:10.6
           - php: '8.2'
             db: mariadb
             image: mariadb:10.11
           - php: '8.3'
             db: mysql
             image: mysql:8.4
+          - php: '8.4'
+            db: mysql
+            image: mysql:8.0
     services:
       mysql:
         image: ${{ matrix.image }}
@@ -50,6 +56,7 @@ jobs:
           coverage: none
           tools: composer
           extensions: pdo_mysql, mysqli, pcntl, posix, redis
+      - run: composer validate --strict
       - run: composer install --no-interaction --prefer-dist
       - run: vendor/bin/phpcs
       - run: vendor/bin/phpstan analyse --memory-limit=512M
@@ -64,6 +71,7 @@ jobs:
           FUZEO_QUEUE_TEST_REDIS_DB: 15
         run: vendor/bin/phpunit
       - name: WordPress test suite (latest)
+        if: matrix.php == '8.2' || matrix.php == '8.3' || matrix.php == '8.4'
         env:
           FUZEO_QUEUE_TEST_DB_HOST: 127.0.0.1
           FUZEO_QUEUE_TEST_DB_USER: root
@@ -76,14 +84,59 @@ jobs:
           export WP_TESTS_DIR="${TMPDIR:-/tmp}/wordpress-tests-lib"
           vendor/bin/phpunit --testsuite WordPress
       - name: WordPress test suite (6.2 minimum)
-        if: matrix.php == '8.1'
+        if: matrix.php == '8.1' && matrix.db == 'mysql'
         env:
           FUZEO_QUEUE_TEST_DB_HOST: 127.0.0.1
           FUZEO_QUEUE_TEST_DB_USER: root
           FUZEO_QUEUE_TEST_DB_PASS: root
         run: |
+          sudo apt-get update -y
+          sudo apt-get install -y rsync mysql-client
           rm -rf "${TMPDIR:-/tmp}/wordpress" "${TMPDIR:-/tmp}/wordpress-tests-lib"
           mysql -h127.0.0.1 -uroot -proot -e "CREATE DATABASE IF NOT EXISTS wordpress_test_min;"
           bash bin/install-wp-tests.sh wordpress_test_min root root 127.0.0.1 6.2 true
           export WP_TESTS_DIR="${TMPDIR:-/tmp}/wordpress-tests-lib"
           vendor/bin/phpunit --testsuite WordPress
+      - name: WordPress multisite
+        if: matrix.php == '8.3'
+        env:
+          FUZEO_QUEUE_TEST_DB_HOST: 127.0.0.1
+          FUZEO_QUEUE_TEST_DB_USER: root
+          FUZEO_QUEUE_TEST_DB_PASS: root
+          WP_MULTISITE: '1'
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y rsync mysql-client
+          rm -rf "${TMPDIR:-/tmp}/wordpress" "${TMPDIR:-/tmp}/wordpress-tests-lib"
+          mysql -h127.0.0.1 -uroot -proot -e "CREATE DATABASE IF NOT EXISTS wordpress_test_ms;"
+          bash bin/install-wp-tests.sh wordpress_test_ms root root 127.0.0.1 latest true
+          export WP_TESTS_DIR="${TMPDIR:-/tmp}/wordpress-tests-lib"
+          vendor/bin/phpunit --testsuite WordPress
+
+  redis6:
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:6-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
+          tools: composer
+          extensions: redis, pcntl, posix
+      - run: composer install --no-interaction --prefer-dist
+      - name: Redis 6 PHPUnit
+        env:
+          FUZEO_QUEUE_TEST_REDIS_HOST: 127.0.0.1
+          FUZEO_QUEUE_TEST_REDIS_PORT: 6379
+          FUZEO_QUEUE_TEST_REDIS_DB: 15
+        run: vendor/bin/phpunit

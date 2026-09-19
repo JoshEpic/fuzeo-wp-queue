@@ -25,6 +25,7 @@ final class EnvelopeFactory
         private readonly Clock $clock = new SystemClock(),
         private readonly int $defaultMaxAttempts = 3,
         private readonly int $defaultTimeoutSeconds = 60,
+        private readonly MetadataLimits $metadataLimits = new MetadataLimits(),
     ) {
     }
 
@@ -42,6 +43,7 @@ final class EnvelopeFactory
         }
 
         $payload = $this->serializer->normalize($job->payload());
+        $this->metadataLimits->assert($options->metadata, $options->tags);
         $now = $this->clock->now();
         $availableAt = $options->availableAt !== null ? Dates::utc($options->availableAt) : $now;
         $context = $options->context ?? $this->contextResolver->current();
@@ -107,6 +109,7 @@ final class EnvelopeFactory
         $type = JobType::normalize($jobType);
         $registered = $this->registry->get($type);
         $payload = $this->serializer->normalize($payload);
+        $this->metadataLimits->assert($options->metadata, $options->tags);
         $now = $this->clock->now();
         $availableAt = $options->availableAt !== null ? Dates::utc($options->availableAt) : $now;
         $context = $options->context ?? $this->contextResolver->current();

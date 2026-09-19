@@ -361,27 +361,14 @@ final class RedisOrchestrationStore implements OrchestrationStore
 
     public function applyMemberTerminal(string $batchId, int $index, MemberStatus $status): BatchProgress
     {
-        $memory = new MemoryOrchestrationStore($this->clock);
         $batch = $this->getBatch($batchId);
         $member = $this->getMember($batchId, $index);
         if ($batch === null || $member === null) {
             throw new \Fuzeo\Queue\Exceptions\QueueException('Unknown batch member.');
         }
-        $memory->createHeader($batch);
-        $all = [];
-        for ($i = 0; $i < $batch->totalJobs; $i++) {
-            $row = $this->getMember($batchId, $i);
-            if ($row !== null) {
-                $all[] = $row;
-            }
-        }
-        $memory->saveMembers($all);
-        $progress = $memory->applyMemberTerminal($batchId, $index, $status);
+        $progress = BatchCounters::apply($batch, $member->status, $status, $this->clock->now());
+        $this->saveMember($this->copyMember($member, $status, $member->jobId));
         $this->saveBatch($progress->batch);
-        $updatedMember = $memory->getMember($batchId, $index);
-        if ($updatedMember !== null) {
-            $this->saveMember($updatedMember);
-        }
         if ($progress->batch->state !== BatchState::Creating && $progress->batch->state !== BatchState::Active) {
             $this->redis->command('SREM', [$this->keys->batchesIncomplete(), $batchId]);
             $this->redis->command('SREM', [$this->keys->batchesCreating(), $batchId]);

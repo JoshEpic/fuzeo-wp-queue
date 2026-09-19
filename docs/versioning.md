@@ -1,19 +1,35 @@
 # Semantic versioning
 
-Before 1.0, breaking changes are allowed but must be called out in release notes.
+Fuzeo Queue 1.0 follows SemVer. Compatibility is stricter for persisted data than for PHP methods.
 
-After 1.0, Fuzeo Queue follows SemVer. Compatibility is not uniform across surfaces:
+## Breaking (major)
 
-| Surface | Stability |
-| --- | --- |
-| Public PHP API (`Queue`, `Job`, value objects) | SemVer |
-| Job envelope format | Stronger than methods. Additive optional fields may appear without a major bump. Removals/renames bump `envelope_version` and a package major. |
-| Database schema | Stronger still. Migrations are owned by `fuzeowp/queue`. Never rewrite in place without a versioned migration. |
-| Driver interfaces | Treat as public. New methods require a default or a major bump. |
-| CLI (`wp fuzeo-queue`) | Public. Renames are breaking. |
-| WordPress hooks (`fuzeo_queue_ready`, `fuzeo_queue_config`) | Public. |
-| Configuration keys | Public. |
+- Public method signature changes on stable types
+- Stable interface changes without a default implementation
+- Public exception type removals or hierarchy breaks that callers must catch
+- Envelope incompatibility (field removals/renames, unread versions)
+- Schema incompatibility without a forward migration
+- Redis data-model or Lua script changes that cannot read 1.0 keys
+- CLI command removals or flag meaning reversals
+- REST `/v1` response breaking changes (use `/v2` instead)
+- Configuration key removals
+- Public hook removals
+- Driver contract changes (`QueueDriver` / capability names)
 
-Persisted data outlives PHP methods. Envelope and schema compatibility is the release blocker, not class cosmetics.
+## Non-breaking (minor / patch)
 
-`PackageInfo::COMPATIBILITY_SERIES` is the runtime coexistence key while multiple plugins bundle copies.
+- New optional config keys
+- New optional envelope fields with defaults (still prefer an envelope version bump if meaning is subtle)
+- New CLI subcommands
+- Additive REST fields
+- New hooks
+- Internal class refactors
+- Performance improvements that preserve semantics
+
+## Compatibility series
+
+`PackageInfo::COMPATIBILITY_SERIES` is **not** SemVer major. It is the bundled-copy runtime epoch. 1.0 remains series **1**. A future series 2 means two copies must not share tables, Redis keys, admin, or CLI.
+
+## Persistence
+
+A 1.x release must not strand 1.0 jobs. See [persistence.md](persistence.md).

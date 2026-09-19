@@ -24,6 +24,7 @@ final class ConfigRepository
         $config = $config->merge($this->fromConstants());
         $config = $config->merge($this->fromEnvironment());
         $config = $config->merge($explicit);
+        ConfigValidator::validate($config);
 
         return $config;
     }
@@ -82,6 +83,7 @@ final class ConfigRepository
             'FUZEO_QUEUE_DEFAULT_QUEUE' => 'default_queue',
             'FUZEO_QUEUE_MAX_PAYLOAD_BYTES' => 'max_payload_bytes',
             'FUZEO_QUEUE_MAX_PAYLOAD_DEPTH' => 'max_payload_depth',
+            'FUZEO_QUEUE_MAX_PAYLOAD_STRING_BYTES' => 'max_payload_string_bytes',
             'FUZEO_QUEUE_DEFAULT_MAX_ATTEMPTS' => 'default_max_attempts',
             'FUZEO_QUEUE_DEFAULT_TIMEOUT_SECONDS' => 'default_timeout_seconds',
             'FUZEO_QUEUE_REDACT_PAYLOADS' => 'redact_payloads',
@@ -122,6 +124,10 @@ final class ConfigRepository
             'FUZEO_QUEUE_DEPLOYMENT_ID' => 'deployment_id',
             'FUZEO_QUEUE_EXPECTED_WORKER_COUNT' => 'expected_worker_count',
             'FUZEO_QUEUE_MAINTENANCE_LEASE_SECONDS' => 'maintenance_lease_seconds',
+            'FUZEO_QUEUE_MAX_TAGS' => 'max_tags',
+            'FUZEO_QUEUE_MAX_TAG_LENGTH' => 'max_tag_length',
+            'FUZEO_QUEUE_MAX_METADATA_BYTES' => 'max_metadata_bytes',
+            'FUZEO_QUEUE_MAX_METADATA_KEY_LENGTH' => 'max_metadata_key_length',
         ];
 
         $values = [];

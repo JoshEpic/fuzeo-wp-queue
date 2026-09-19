@@ -14,7 +14,9 @@ Reasons:
 WP_CLI::add_command('fuzeo-queue', QueueCommand::class);
 ```
 
-Subcommands: `work`, `schedule-work`, `schedule-run`, `schedules`, `unique`, `idempotency`, `status`, `workers`, `queues`, `jobs`, `failed`, `prune`, `chains`, `batches`, `cancel`, `reconcile`, `health`, `metrics`, `restart`, `drain`, `ready`, `migrate`.
+Subcommands: `work`, `schedule-work`, `schedule-run`, `schedules`, `unique`, `idempotency`, `status`, `workers`, `queues`, `jobs`, `failed`, `prune`, `chains`, `batches`, `cancel`, `reconcile`, `health`, `metrics`, `diagnostics`, `restart`, `drain`, `ready`, `migrate`.
+
+`diagnostics --format=json` is the paste-safe support snapshot (versions, schema, driver, workers, health; no job payloads). Exit codes for `ready` / `migrate --check` / drain wait are documented in [exit-codes.md](exit-codes.md).
 
 `jobs` lists or shows jobs (`jobs show <id> --payload`). `health` and `metrics` read the operations layer (`--format=json` supported). `prune` also deletes aged metrics/audit rows.
 

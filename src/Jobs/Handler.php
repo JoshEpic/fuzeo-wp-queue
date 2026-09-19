@@ -7,7 +7,8 @@ namespace Fuzeo\Queue\Jobs;
 use Fuzeo\Queue\Jobs\Envelope;
 
 /**
- * Optional runtime handler. Workers in later phases resolve this from the registry.
+ * Optional runtime handler. Workers resolve this from the job registry.
+ * Handler class names are not the persistence identity; job type() is.
  */
 interface Handler
 {

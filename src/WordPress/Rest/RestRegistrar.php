@@ -48,6 +48,7 @@ final class RestRegistrar
                 'limit' => $page->limit,
                 'offset' => $page->offset,
                 'total' => $page->total,
+                'total_is_approximate' => $page->truncated,
             ];
         });
         self::route('/jobs/(?P<id>[A-Za-z0-9]+)', $get, static function ($req): array {

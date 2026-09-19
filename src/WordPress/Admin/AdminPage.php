@@ -23,7 +23,8 @@ final class AdminPage
         $operator = self::operator();
         $page = isset($_GET['page']) && is_string($_GET['page']) ? sanitize_key($_GET['page']) : AdminRegistrar::MENU_SLUG;
         $view = isset($_GET['fq_view']) && is_string($_GET['fq_view']) ? sanitize_key($_GET['fq_view']) : 'overview';
-        echo '<div class="wrap fuzeo-queue-admin" data-rest="' . esc_attr(self::restRoot()) . '" data-nonce="' . esc_attr(wp_create_nonce('wp_rest')) . '">';
+        echo '<a class="screen-reader-text skip-link" href="#fuzeo-queue-main">Skip to Fuzeo Queue content</a>';
+        echo '<div id="fuzeo-queue-main" class="wrap fuzeo-queue-admin" data-rest="' . esc_attr(self::restRoot()) . '" data-nonce="' . esc_attr(wp_create_nonce('wp_rest')) . '">';
         echo '<h1>Fuzeo Queue</h1>';
         self::nav($page, $view);
         match ($view) {
@@ -59,7 +60,8 @@ final class AdminPage
         foreach ($items as $key => $label) {
             $url = add_query_arg(['page' => $page, 'fq_view' => $key]);
             $class = $view === $key ? ' class="current"' : '';
-            echo '<li><a' . $class . ' href="' . esc_url($url) . '">' . esc_html($label) . '</a>';
+            $current = $view === $key ? ' aria-current="page"' : '';
+            echo '<li><a' . $class . $current . ' href="' . esc_url($url) . '">' . esc_html($label) . '</a>';
             echo $key === $last ? '' : ' |';
             echo '</li>';
         }
@@ -149,6 +151,9 @@ final class AdminPage
     {
         $state = isset($_GET['state']) && is_string($_GET['state']) ? JobState::tryFrom(sanitize_key($_GET['state'])) : null;
         $page = Coordinator::get()->operations()->jobs($operator, new JobQuery(state: $state, limit: 25));
+        if ($page->truncated) {
+            echo '<p role="status">Job totals for Redis are bounded. This list scanned at most 2,000 keys and may omit matching jobs. Filter by job ID when possible.</p>';
+        }
         echo '<table class="widefat striped"><caption>Jobs</caption><thead><tr>';
         echo '<th scope="col">ID</th><th scope="col">Type</th><th scope="col">State</th><th scope="col">Queue</th><th scope="col">Origin</th><th scope="col">Site</th>';
         echo '</tr></thead><tbody>';

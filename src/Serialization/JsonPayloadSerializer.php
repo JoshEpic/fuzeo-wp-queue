@@ -107,6 +107,12 @@ final class JsonPayloadSerializer implements PayloadSerializer
             return $out;
         }
 
+        if (is_string($value) && strlen($value) > $this->limits->maxStringBytes) {
+            throw new SerializationException(
+                'Payload string at ' . $path . ' exceeds ' . $this->limits->maxStringBytes . ' bytes.'
+            );
+        }
+
         if (is_string($value) && !$this->isUtf8($value)) {
             throw new SerializationException('Payload at ' . $path . ' is not valid UTF-8.');
         }

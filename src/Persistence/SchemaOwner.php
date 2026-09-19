@@ -6,6 +6,8 @@ namespace Fuzeo\Queue\Persistence;
 
 /**
  * Fuzeo Queue owns schema. Consuming plugins never version or migrate queue tables.
+ *
+ * @internal
  */
 final class SchemaOwner
 {

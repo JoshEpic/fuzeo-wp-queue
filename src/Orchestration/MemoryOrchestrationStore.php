@@ -312,64 +312,11 @@ final class MemoryOrchestrationStore implements OrchestrationStore
                 return new BatchProgress($batch, false);
             }
         }
-        $completed = $batch->completedJobs;
-        $failed = $batch->failedJobs;
-        $cancelled = $batch->cancelledJobs;
-        if ($member->status === MemberStatus::Completed) {
-            $completed--;
-        }
-        if ($member->status === MemberStatus::Dead || $member->status === MemberStatus::UniqueConflict) {
-            $failed--;
-        }
-        if ($member->status === MemberStatus::Cancelled) {
-            $cancelled--;
-        }
         $this->members[$batchId][$index] = $this->copyMember($member, $status, $member->jobId);
-        if ($status === MemberStatus::Completed) {
-            $completed++;
-        }
-        if ($status === MemberStatus::Dead || $status === MemberStatus::UniqueConflict) {
-            $failed++;
-        }
-        if ($status === MemberStatus::Cancelled) {
-            $cancelled++;
-        }
-        $now = $this->clock->now();
-        $state = $batch->state;
-        $just = false;
-        $completedAt = $batch->completedAt;
-        $failedAt = $batch->failedAt;
-        $cancelledAt = $batch->cancelledAt;
-        $terminal = ($completed + $failed + $cancelled) >= $batch->totalJobs && $batch->totalJobs > 0;
-        if ($terminal && ($state === BatchState::Active || $state === BatchState::Creating || $state === BatchState::Failed)) {
-            if ($batch->cancelRequested) {
-                $state = BatchState::Cancelled;
-                $cancelledAt = $cancelledAt ?? $now;
-            } elseif ($failed > 0) {
-                $state = BatchState::Failed;
-                $failedAt = $failedAt ?? $now;
-            } else {
-                $state = BatchState::Completed;
-                $completedAt = $completedAt ?? $now;
-            }
-            $just = $batch->state !== $state;
-        } elseif ($status === MemberStatus::Dead && $batch->failurePolicy === BatchFailurePolicy::FailFast && $state === BatchState::Active) {
-            $state = BatchState::Failed;
-            $failedAt = $now;
-            $just = false;
-        }
-        $updated = $this->copyBatch($batch, [
-            'state' => $state,
-            'completedJobs' => max(0, $completed),
-            'failedJobs' => max(0, $failed),
-            'cancelledJobs' => max(0, $cancelled),
-            'completedAt' => $completedAt,
-            'failedAt' => $failedAt,
-            'cancelledAt' => $cancelledAt,
-        ]);
-        $this->batches[$batchId] = $updated;
+        $progress = BatchCounters::apply($batch, $member->status, $status, $this->clock->now());
+        $this->batches[$batchId] = $progress->batch;
 
-        return new BatchProgress($updated, $just);
+        return $progress;
     }
 
     public function activateBatch(string $batchId): bool

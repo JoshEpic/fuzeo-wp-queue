@@ -6,6 +6,10 @@ namespace Fuzeo\Queue\Redis;
 
 final class RedisKeys
 {
+    /**
+     * Redis Cluster is not supported in 1.0. Keys are prefixed `fuzeo_queue:{namespace}:`.
+     * Hash tags are not applied; changing the key grammar would be a breaking data-model change.
+     */
     public function __construct(private readonly string $prefix)
     {
     }

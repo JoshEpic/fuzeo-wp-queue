@@ -1,0 +1,19 @@
+name: Feature request
+description: Propose a change after 1.0
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+    validations:
+      required: true
+  - type: markdown
+    attributes:
+      value: Interoperability with Action Scheduler / WP-Cron is tracked as a post-1.0 phase, not ad-hoc features in 1.0 patches.

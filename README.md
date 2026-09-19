@@ -1,22 +1,30 @@
 # Fuzeo Queue
 
-Durable queue infrastructure for WordPress plugin developers.
+Real background job infrastructure for WordPress plugin developers.
+
+Durable queues, persistent workers, retries, scheduling, concurrency, observability, and more.
 
 ```bash
-composer require fuzeowp/queue
+composer require fuzeowp/queue:^1.0
 ```
 
-Fuzeo Queue is a Composer library, not a WordPress plugin and not a wrapper around WP-Cron or Action Scheduler. It owns its queue architecture.
+Fuzeo Queue is a Composer library. It is not a WordPress plugin, not WP-Cron, and not Action Scheduler.
 
-Phase 9 adds deployment generations, restart/drain signaling, readiness, and process-manager documentation. Delivery remains **at-least-once**.
+Delivery is **at-least-once**. A worker may crash after a side effect and before acknowledgement; another worker will run the job after the lease expires. Design handlers accordingly.
 
 ## Requirements
 
-- PHP 8.1+
-- MySQL 8.0.1+ or MariaDB 10.6+ **or** Redis 6.0+ with PhpRedis for production
-- WordPress is optional at the package boundary. Requiring the package loads classes; it does not mutate WordPress until a runtime boots on `plugins_loaded`.
+| Surface | 1.0 support |
+| --- | --- |
+| PHP | 8.1, 8.2, 8.3, 8.4 |
+| WordPress | 6.2+ (optional until you boot a runtime) |
+| MySQL | 8.0.1+ (`FOR UPDATE SKIP LOCKED`) |
+| MariaDB | 10.6+ |
+| Redis | 6.0+ with PhpRedis (7.x is the primary CI image) |
 
-## Quick start
+Requiring the package loads classes. It does not mutate WordPress until a runtime boots on `plugins_loaded`.
+
+## Quick example
 
 ```php
 use Fuzeo\Queue\Jobs\Job;
@@ -50,62 +58,77 @@ add_action('fuzeo_queue_ready', function ($runtime): void {
 });
 
 Queue::dispatch(new ProcessOrder(123));
-Queue::later('+15 minutes', new ProcessOrder(123));
-Queue::chain([new ProcessOrder(1), new ProcessOrder(2)])->dispatch();
-Queue::batch([new ProcessOrder(1), new ProcessOrder(2)])->dispatch();
-
-// Independent worker / scheduler:
-// wp fuzeo-queue work
-// wp fuzeo-queue schedule-work
 ```
 
-## Safe payloads
+Production workers are persistent CLI processes:
 
-Store IDs and primitive data, not live PHP or WordPress objects.
+```bash
+wp fuzeo-queue work
+wp fuzeo-queue schedule-work
+```
+
+Unit tests do not need MySQL:
 
 ```php
-['order_id' => 123]  // yes
-['order' => $wcOrder] // rejected
+Coordinator::bootForTesting();
+Queue::register(ProcessOrder::class, new Origin('acme/shop', '1.0.0'));
+Queue::fake();
+Queue::dispatch(new ProcessOrder(123));
+Queue::assertDispatched(ProcessOrder::class);
 ```
 
-## Delivery semantics
+## What 1.0 includes
 
-Fuzeo Queue is **at-least-once**. A worker may crash after a side effect and before ACK; after the lease expires another worker will run the job. Use [unique jobs](docs/unique-jobs.md) to prevent duplicate enqueue and [idempotency primitives](docs/idempotency.md) (plus vendor idempotency keys) to protect logical effects.
+- MySQL and Redis durable backends, plus an in-memory driver for tests
+- Persistent workers, reservation leases, token-gated ACK
+- Retries, backoff, jitter, dead letters, poison-job exhaustion
+- Delayed jobs, recurring schedules, uniqueness, idempotency primitives
+- Chains, batches, cooperative cancellation, reconciliation
+- Metrics, health, REST, admin dashboard, Site Health
+- Deployment generations, drain, restart, schema migrations
+- Multisite isolation and WooCommerce/HPOS-safe ID-over-object jobs
+
+## What 1.0 is not
+
+- Exactly-once delivery
+- A WP-Cron or Action Scheduler replacement or interceptor (planned as a later interoperability layer)
+- Redis Cluster
+- A workflow engine, webhook product, or hosting control plane
+- A commercial Fuzeo licensing component
+
+## Drivers
+
+Pick **one** production backend. Switching drivers does not migrate jobs.
+
+- **MySQL / MariaDB** — good default when the WordPress database is already operational.
+- **Redis** — queue infrastructure, not disposable object cache. Use persistence, `noeviction`, and a dedicated instance or database.
+- **Memory / `Queue::fake()`** — tests only.
 
 ## Documentation
 
-- [Bootstrapping](docs/bootstrapping.md)
-- [Jobs and payloads](docs/jobs.md)
-- [Delayed jobs](docs/delayed-jobs.md)
-- [Recurring schedules](docs/schedules.md)
-- [Unique jobs](docs/unique-jobs.md)
-- [Idempotency primitives](docs/idempotency.md)
-- [Job chains](docs/chains.md)
-- [Job batches](docs/batches.md)
-- [Cancellation](docs/cancellation.md)
-- [Retries and dead letters](docs/retries.md)
-- [MySQL driver](docs/mysql.md)
-- [Redis driver](docs/redis.md)
-- [Workers](docs/workers.md)
-- [Long-running workers](docs/long-running-workers.md)
-- [Operations](docs/operations.md)
-- [Deployments](docs/deployments.md)
-- [Supervisor](docs/supervisor.md)
-- [systemd](docs/systemd.md)
-- [Docker](docs/docker.md)
-- [Job versioning](docs/job-versioning.md)
-- [Rollback](docs/rollback.md)
-- [WooCommerce](docs/woocommerce.md)
-- [Troubleshooting](docs/troubleshooting.md)
-- [Testing](docs/testing.md)
-- [Configuration](docs/configuration.md)
-- [Multisite](docs/multisite.md)
-- [Runtime compatibility](docs/runtime-compatibility.md)
-- [CLI and admin](docs/cli-and-admin.md)
-- [Versioning](docs/versioning.md)
-- [Threat model](docs/threat-model.md)
-- [Architecture decisions](docs/adr/)
+- [Quickstart](docs/quickstart.md)
+- [WordPress plugin guide](docs/plugin-guide.md)
+- [Job authoring](docs/job-authoring.md)
+- [Public API](docs/api.md)
+- [Bundling](docs/bundling.md)
+- [SemVer](docs/versioning.md)
+- [Persistence](docs/persistence.md)
+- [Upgrade from 0.9](UPGRADING.md)
+- [Known limitations](docs/known-limitations.md)
+- [FAQ](docs/faq.md)
+- [Security policy](SECURITY.md)
+- [Contributing](CONTRIBUTING.md)
+
+Operations: [workers](docs/workers.md), [MySQL](docs/mysql.md), [Redis](docs/redis.md), [deployments](docs/deployments.md), [Supervisor](docs/supervisor.md), [systemd](docs/systemd.md), [Docker](docs/docker.md), [troubleshooting](docs/troubleshooting.md), [observability](docs/observability.md), [REST](docs/rest.md), [hooks](docs/hooks.md).
+
+## Bundling
+
+When several plugins ship Fuzeo Queue, **the first autoloader wins**. Constrain `fuzeowp/queue` to `^1.0` and do not scope the `Fuzeo\Queue\` namespace. See [bundling](docs/bundling.md).
+
+## Security
+
+Report vulnerabilities privately as described in [SECURITY.md](SECURITY.md). Do not open a public issue for an active vulnerability.
 
 ## License
 
-MIT
+MIT. See [LICENSE](LICENSE).

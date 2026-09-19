@@ -16,6 +16,7 @@ final class Config
         public readonly string $defaultQueue = 'default',
         public readonly int $maxPayloadBytes = 262144,
         public readonly int $maxPayloadDepth = 32,
+        public readonly int $maxPayloadStringBytes = 65536,
         public readonly int $defaultMaxAttempts = 3,
         public readonly int $defaultTimeoutSeconds = 60,
         public readonly bool $redactPayloads = true,
@@ -58,6 +59,10 @@ final class Config
         public readonly string $deploymentId = '',
         public readonly int $expectedWorkerCount = 0,
         public readonly int $maintenanceLeaseSeconds = 300,
+        public readonly int $maxTags = 16,
+        public readonly int $maxTagLength = 64,
+        public readonly int $maxMetadataBytes = 8192,
+        public readonly int $maxMetadataKeyLength = 64,
     ) {
     }
 
@@ -71,6 +76,7 @@ final class Config
             defaultQueue: $this->string($values, 'default_queue', $this->defaultQueue),
             maxPayloadBytes: $this->int($values, 'max_payload_bytes', $this->maxPayloadBytes),
             maxPayloadDepth: $this->int($values, 'max_payload_depth', $this->maxPayloadDepth),
+            maxPayloadStringBytes: $this->int($values, 'max_payload_string_bytes', $this->maxPayloadStringBytes),
             defaultMaxAttempts: $this->int($values, 'default_max_attempts', $this->defaultMaxAttempts),
             defaultTimeoutSeconds: $this->int($values, 'default_timeout_seconds', $this->defaultTimeoutSeconds),
             redactPayloads: $this->bool($values, 'redact_payloads', $this->redactPayloads),
@@ -111,6 +117,10 @@ final class Config
             deploymentId: $this->stringAllowEmpty($values, 'deployment_id', $this->deploymentId),
             expectedWorkerCount: $this->int($values, 'expected_worker_count', $this->expectedWorkerCount),
             maintenanceLeaseSeconds: $this->int($values, 'maintenance_lease_seconds', $this->maintenanceLeaseSeconds),
+            maxTags: $this->int($values, 'max_tags', $this->maxTags),
+            maxTagLength: $this->int($values, 'max_tag_length', $this->maxTagLength),
+            maxMetadataBytes: $this->int($values, 'max_metadata_bytes', $this->maxMetadataBytes),
+            maxMetadataKeyLength: $this->int($values, 'max_metadata_key_length', $this->maxMetadataKeyLength),
         );
     }
 

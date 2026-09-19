@@ -798,6 +798,7 @@ final class Operations
                 'day_days' => $this->retention->dayDays,
             ],
             'default_queue' => $config->defaultQueue,
+            'payloads_included' => false,
         ];
     }
 

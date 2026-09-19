@@ -25,6 +25,7 @@ use Fuzeo\Queue\Inspection\EmptyJobCatalog;
 use Fuzeo\Queue\Inspection\JobCatalog;
 use Fuzeo\Queue\Jobs\EnvelopeFactory;
 use Fuzeo\Queue\Jobs\JobRegistry;
+use Fuzeo\Queue\Jobs\MetadataLimits;
 use Fuzeo\Queue\Metrics\IsolatingRecorder;
 use Fuzeo\Queue\Metrics\MemoryMetricsRepository;
 use Fuzeo\Queue\Metrics\MetricRecorder;
@@ -261,6 +262,7 @@ final class QueueManager
             $this->clock,
             $this->config->defaultMaxAttempts,
             $this->config->defaultTimeoutSeconds,
+            MetadataLimits::fromConfig($this->config),
         );
 
         return new Dispatcher($factory, $driver, $this->config, $this->fake, $this->clock, $this->recorder, $this);

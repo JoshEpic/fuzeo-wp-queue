@@ -6,11 +6,11 @@ namespace Fuzeo\Queue\Runtime;
 
 final class PackageInfo
 {
-    public const VERSION = '0.9.0';
+    public const VERSION = '1.0.0';
 
     /**
-     * Runtime compatibility epoch. Incompatible bundled copies must not share a runtime.
-     * This is independent of Composer major while the package is 0.x.
+     * Runtime coexistence epoch for bundled copies. Independent of Composer SemVer.
+     * 1.0.0 remains series 1: compatible 1.x copies may share one runtime.
      */
     public const COMPATIBILITY_SERIES = 1;
 

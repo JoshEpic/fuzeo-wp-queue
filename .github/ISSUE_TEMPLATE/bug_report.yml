@@ -1,0 +1,42 @@
+name: Bug report
+description: Report a Fuzeo Queue bug
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Remove secrets from logs before pasting.
+  - type: input
+    id: php
+    attributes:
+      label: PHP version
+    validations:
+      required: true
+  - type: input
+    id: wp
+    attributes:
+      label: WordPress version
+  - type: input
+    id: queue
+    attributes:
+      label: Fuzeo Queue version
+    validations:
+      required: true
+  - type: dropdown
+    id: driver
+    attributes:
+      label: Driver
+      options: [mysql, redis, memory, unknown]
+  - type: input
+    id: backend
+    attributes:
+      label: MySQL/MariaDB or Redis version
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs (secrets removed)

@@ -22,9 +22,26 @@
 .fuzeo-queue-admin .fuzeo-status--critical::after {
   content: " (critical)";
 }
+.fuzeo-queue-admin :focus {
+  outline: 2px solid #2271b1;
+  outline-offset: 2px;
+}
+.fuzeo-queue-admin .fuzeo-nav a {
+  display: inline-block;
+  padding: 0.35rem 0.5rem;
+}
+.fuzeo-queue-admin progress {
+  width: 8rem;
+  vertical-align: middle;
+}
 @media (max-width: 782px) {
   .fuzeo-queue-admin table {
     display: block;
     overflow-x: auto;
+  }
+  .fuzeo-queue-admin .fuzeo-nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
   }
 }

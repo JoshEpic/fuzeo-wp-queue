@@ -60,8 +60,10 @@ final class RedisJobCatalog implements JobCatalog
         $ids = $this->idsForState($query->state);
         $matched = [];
         $inspected = 0;
+        $truncated = false;
         foreach ($ids as $id) {
             if ($inspected++ >= self::SCAN_CAP) {
+                $truncated = true;
                 break;
             }
             try {
@@ -76,7 +78,7 @@ final class RedisJobCatalog implements JobCatalog
         $total = count($matched);
         $page = array_slice($matched, $query->offset, $query->limit);
 
-        return new JobPage($page, $query->limit, $query->offset, $total);
+        return new JobPage($page, $query->limit, $query->offset, $total, $truncated);
     }
 
     public function queueSnapshots(?int $siteId = null): array

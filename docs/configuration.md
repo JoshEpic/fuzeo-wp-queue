@@ -14,6 +14,7 @@ Precedence, highest first:
 | `default_queue` | `FUZEO_QUEUE_DEFAULT_QUEUE` | `default` |
 | `max_payload_bytes` | `FUZEO_QUEUE_MAX_PAYLOAD_BYTES` | `262144` |
 | `max_payload_depth` | `FUZEO_QUEUE_MAX_PAYLOAD_DEPTH` | `32` |
+| `max_payload_string_bytes` | `FUZEO_QUEUE_MAX_PAYLOAD_STRING_BYTES` | `65536` |
 | `default_max_attempts` | `FUZEO_QUEUE_DEFAULT_MAX_ATTEMPTS` | `3` |
 | `default_timeout_seconds` | `FUZEO_QUEUE_DEFAULT_TIMEOUT_SECONDS` | `60` |
 | `redact_payloads` | `FUZEO_QUEUE_REDACT_PAYLOADS` | `true` |
@@ -54,5 +55,13 @@ Precedence, highest first:
 | `deployment_id` | `FUZEO_QUEUE_DEPLOYMENT_ID` | empty |
 | `expected_worker_count` | `FUZEO_QUEUE_EXPECTED_WORKER_COUNT` | `0` |
 | `maintenance_lease_seconds` | `FUZEO_QUEUE_MAINTENANCE_LEASE_SECONDS` | `300` |
+| `max_tags` | `FUZEO_QUEUE_MAX_TAGS` | `16` |
+| `max_tag_length` | `FUZEO_QUEUE_MAX_TAG_LENGTH` | `64` |
+| `max_metadata_bytes` | `FUZEO_QUEUE_MAX_METADATA_BYTES` | `8192` |
+| `max_metadata_key_length` | `FUZEO_QUEUE_MAX_METADATA_KEY_LENGTH` | `64` |
+
+Invalid values fail at boot (`ConfigurationException`) with an actionable message. Changing driver, Redis DSN, lease, or timeout requires a worker recycle.
+
+`default_timeout_seconds` and `worker_timeout` must be less than `lease_seconds`.
 
 Drivers: `mysql`, `redis` (PhpRedis), `memory` (tests), `unavailable` (fail closed), plus `Queue::fake()`. Switching drivers does not migrate jobs, schedules, uniqueness claims, or idempotency records. See [Redis](redis.md) and [ADR-050](adr/050-driver-switching-with-scheduler-uniqueness-state.md).

@@ -79,6 +79,9 @@ final class Envelope
                 throw new QueueException('Each tag must be a non-empty string of 64 characters or fewer.');
             }
         }
+        if (count($this->tags) > 32) {
+            throw new QueueException('Envelope may contain at most 32 tags.');
+        }
     }
 
     public function withState(JobState $state): self

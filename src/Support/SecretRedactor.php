@@ -17,6 +17,7 @@ final class SecretRedactor
         'api_key',
         'apikey',
         'authorization',
+        'bearer',
         'cookie',
         'access_token',
         'refresh_token',
@@ -80,7 +81,16 @@ final class SecretRedactor
     public function isSensitive(string $key): bool
     {
         $normalized = strtolower(str_replace(['-', ' '], '_', $key));
+        if (in_array($normalized, $this->keys, true)) {
+            return true;
+        }
 
-        return in_array($normalized, $this->keys, true);
+        foreach (['password', 'passwd', 'secret', 'token', 'authorization', 'cookie', 'private_key', 'api_key', 'apikey'] as $needle) {
+            if ($normalized === $needle || str_ends_with($normalized, '_' . $needle)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

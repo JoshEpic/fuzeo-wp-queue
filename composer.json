@@ -1,6 +1,6 @@
 {
     "name": "fuzeowp/queue",
-    "description": "Durable queue infrastructure for WordPress plugin developers.",
+    "description": "Real background job infrastructure for WordPress. Durable queues, persistent workers, retries, scheduling, concurrency, observability, and more.",
     "type": "library",
     "license": "MIT",
     "keywords": [
@@ -8,6 +8,9 @@
         "queue",
         "jobs",
         "background",
+        "workers",
+        "redis",
+        "mysql",
         "fuzeo"
     ],
     "homepage": "https://github.com/JoshEpic/fuzeo-wp-queue",
@@ -49,7 +52,13 @@
         ]
     },
     "suggest": {
-        "ext-redis": "Required for the Redis queue driver (PhpRedis)."
+        "ext-redis": "Required for the Redis queue driver (PhpRedis 5.3+ recommended).",
+        "ext-pcntl": "Enables cooperative job timeouts and SIGTERM handling in CLI workers."
+    },
+    "support": {
+        "issues": "https://github.com/JoshEpic/fuzeo-wp-queue/issues",
+        "source": "https://github.com/JoshEpic/fuzeo-wp-queue",
+        "docs": "https://github.com/JoshEpic/fuzeo-wp-queue/blob/main/README.md"
     },
     "config": {
         "sort-packages": true,

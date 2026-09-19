@@ -6,6 +6,8 @@ namespace Fuzeo\Queue\Redis;
 
 /**
  * Versioned Lua scripts. SHA cache is reloaded on NOSCRIPT.
+ *
+ * @internal Redis script source is not a public PHP API.
  */
 final class RedisScripts
 {

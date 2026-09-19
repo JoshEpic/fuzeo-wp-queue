@@ -135,13 +135,13 @@ final class MysqlRetryTest extends MysqlTestCase
     public function testOldSchemaRefusesReserve(): void
     {
         Coordinator::bootForTesting(['driver' => 'mysql'], connection: $this->connection);
+        Queue::register(ProcessOrderJob::class, new Origin('acme/shop', '1.0.0'), ProcessOrderHandler::class);
+        Queue::dispatch(new ProcessOrderJob(4));
         $meta = Schema::quoteTable($this->connection->prefix(), Schema::META);
         $this->connection->execute(
             'UPDATE ' . $meta . ' SET `meta_value` = ? WHERE `meta_key` = ?',
             ['2', Schema::META_VERSION]
         );
-        Queue::register(ProcessOrderJob::class, new Origin('acme/shop', '1.0.0'), ProcessOrderHandler::class);
-        Queue::dispatch(new ProcessOrderJob(4));
         $driver = Coordinator::get()->driver();
         self::assertInstanceOf(MySqlDriver::class, $driver);
         $this->expectException(\Fuzeo\Queue\Exceptions\DriverException::class);
