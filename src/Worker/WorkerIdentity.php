@@ -15,10 +15,11 @@ final class WorkerIdentity
         public readonly int $pid,
         public readonly \DateTimeImmutable $startedAt,
         public readonly string $runtimeVersion,
+        public readonly string $runtimeGeneration = '',
     ) {
     }
 
-    public static function generate(?\DateTimeImmutable $startedAt = null): self
+    public static function generate(?\DateTimeImmutable $startedAt = null, string $runtimeGeneration = ''): self
     {
         $host = gethostname();
         $pid = getmypid();
@@ -29,6 +30,7 @@ final class WorkerIdentity
             is_int($pid) ? $pid : 0,
             $startedAt ?? new \DateTimeImmutable('now', new \DateTimeZone('UTC')),
             PackageInfo::VERSION,
+            $runtimeGeneration,
         );
     }
 }

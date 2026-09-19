@@ -119,6 +119,11 @@ final class PdoConnection implements Connection
         return $this->supportsSkipLocked;
     }
 
+    public function inTransaction(): bool
+    {
+        return $this->pdo->inTransaction();
+    }
+
     /**
      * @param list<mixed> $bindings
      */

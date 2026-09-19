@@ -71,6 +71,8 @@ final class FailureClassifier
             $throwable instanceof \Fuzeo\Queue\Exceptions\UnsupportedSchemaException => 'unsupported_schema',
             $throwable instanceof \Fuzeo\Queue\Exceptions\UnsupportedEnvelopeException => 'unsupported_envelope',
             $throwable instanceof \Fuzeo\Queue\Exceptions\SiteUnavailableException => 'site_unavailable',
+            $throwable instanceof \Fuzeo\Queue\Exceptions\HandlerUnavailableException => 'handler_unavailable',
+            $throwable instanceof \Fuzeo\Queue\Exceptions\RuntimeContextException => 'runtime_context',
             $throwable instanceof \TypeError => 'type_error',
             $throwable instanceof \Error => 'php_error',
             default => 'terminal_failure',

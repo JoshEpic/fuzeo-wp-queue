@@ -16,6 +16,9 @@ final class TimeoutGuard
         if ($seconds < 1 || !function_exists('pcntl_alarm') || !function_exists('pcntl_signal')) {
             return;
         }
+        if (getenv('FUZEO_QUEUE_DISABLE_ALARMS') === '1') {
+            return;
+        }
         pcntl_signal(SIGALRM, function () use ($onTimeout): void {
             $this->armed = false;
             $onTimeout();
@@ -28,6 +31,9 @@ final class TimeoutGuard
     {
         if (function_exists('pcntl_alarm')) {
             pcntl_alarm(0);
+        }
+        if (function_exists('pcntl_signal')) {
+            pcntl_signal(SIGALRM, SIG_IGN);
         }
         $this->armed = false;
     }

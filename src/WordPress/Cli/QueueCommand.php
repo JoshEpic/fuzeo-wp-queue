@@ -52,7 +52,7 @@ final class QueueCommand
     {
         unset($args);
         $runtime = Coordinator::get();
-        $options = WorkerOptions::fromCli($assoc, $runtime->config()->defaultQueue);
+        $options = WorkerOptions::fromCli($assoc, $runtime->config()->defaultQueue, $runtime->config());
         $worker = WorkerLoop::fromManager($runtime, $options);
         if (class_exists('WP_CLI')) {
             \WP_CLI::log('Fuzeo Queue worker ' . $worker->identity()->workerId . ' listening on ' . implode(',', $options->queues));
@@ -70,7 +70,7 @@ final class QueueCommand
     {
         unset($args);
         $runtime = Coordinator::get();
-        $options = WorkerOptions::fromCli($assoc, $runtime->config()->defaultQueue);
+        $options = WorkerOptions::fromCli($assoc, $runtime->config()->defaultQueue, $runtime->config());
         $loop = SchedulerLoop::fromManager($runtime, $options);
         if (class_exists('WP_CLI')) {
             \WP_CLI::log('Fuzeo Queue scheduler ' . $loop->schedulerId() . ' running');

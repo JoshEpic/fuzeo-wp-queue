@@ -9,9 +9,21 @@ use Fuzeo\Queue\Core\QueueManager;
 use Fuzeo\Queue\Drivers\MySql\MySqlDriver;
 use Fuzeo\Queue\Drivers\QueueDriver;
 use Fuzeo\Queue\Drivers\Reconnectable;
+use Fuzeo\Queue\Drivers\Redis\RedisDriver;
 use Fuzeo\Queue\Exceptions\ConfigurationException;
 use Fuzeo\Queue\Exceptions\DriverException;
+use Fuzeo\Queue\Runtime\ErrorLogLogger;
+use Fuzeo\Queue\Runtime\Hooks;
+use Fuzeo\Queue\Runtime\MemoryMonitor;
+use Fuzeo\Queue\Runtime\NativeWordPressRuntime;
+use Fuzeo\Queue\Runtime\NullLogger;
 use Fuzeo\Queue\Runtime\PackageInfo;
+use Fuzeo\Queue\Runtime\ProcessLifecycle;
+use Fuzeo\Queue\Runtime\RecycleReason;
+use Fuzeo\Queue\Runtime\RuntimeBaseline;
+use Fuzeo\Queue\Runtime\RuntimeGeneration;
+use Fuzeo\Queue\Runtime\RuntimeLogger;
+use Fuzeo\Queue\Runtime\RuntimeResetter;
 use Fuzeo\Queue\Support\SystemClock;
 use Fuzeo\Queue\Support\Ulid;
 use Fuzeo\Queue\Worker\SignalListener;
@@ -23,13 +35,13 @@ use Fuzeo\Queue\Worker\WorkerOptions;
  */
 final class SchedulerLoop
 {
-    private bool $stopping = false;
-
     private readonly \DateTimeImmutable $startedAt;
 
     private int $lastHeartbeatAt = 0;
 
     private int $processed = 0;
+
+    private readonly ProcessLifecycle $lifecycle;
 
     public function __construct(
         private readonly Scheduler $scheduler,
@@ -40,8 +52,20 @@ final class SchedulerLoop
         private readonly SignalListener $signals = new SignalListener(),
         private readonly ?object $reconnectable = null,
         private readonly ?QueueDriver $driver = null,
+        ?ProcessLifecycle $lifecycle = null,
+        private readonly ?RuntimeResetter $resetter = null,
+        private readonly RuntimeLogger $logger = new NullLogger(),
     ) {
         $this->startedAt = $this->clock->now();
+        $this->lifecycle = $lifecycle ?? new ProcessLifecycle(
+            $options,
+            new RuntimeGeneration(new NativeWordPressRuntime()),
+            new MemoryMonitor(memory_get_usage(true)),
+            $this->logger,
+            $this->clock,
+            null,
+            $this->startedAt,
+        );
     }
 
     public static function fromManager(QueueManager $manager, WorkerOptions $options): self
@@ -50,6 +74,24 @@ final class SchedulerLoop
         if (!$driver->capabilities()->supports('scheduling')) {
             throw new ConfigurationException('The active driver does not support scheduling.');
         }
+        $wp = new NativeWordPressRuntime();
+        $generation = new RuntimeGeneration($wp);
+        $boot = $generation->current();
+        $logger = defined('WP_DEBUG') && WP_DEBUG ? new ErrorLogLogger() : new NullLogger();
+        $connection = $driver instanceof MySqlDriver ? $driver->connection() : null;
+        $redis = $driver instanceof RedisDriver ? $driver->redis() : null;
+        $resetter = $options->runtimeReset
+            ? new RuntimeResetter(RuntimeBaseline::capture($wp, $boot), $wp, $logger, $connection, $redis)
+            : null;
+        $lifecycle = new ProcessLifecycle(
+            $options,
+            $generation,
+            new MemoryMonitor(memory_get_usage(true)),
+            $logger,
+            $manager->clock(),
+            $boot,
+            $manager->clock()->now(),
+        );
 
         return new self(
             $manager->scheduler(),
@@ -59,6 +101,9 @@ final class SchedulerLoop
             $manager->clock(),
             reconnectable: $driver instanceof Reconnectable ? $driver : null,
             driver: $driver,
+            lifecycle: $lifecycle,
+            resetter: $resetter,
+            logger: $logger,
         );
     }
 
@@ -72,12 +117,19 @@ final class SchedulerLoop
         return $this->processed;
     }
 
+    public function recycleReason(): RecycleReason
+    {
+        return $this->lifecycle->reason();
+    }
+
     public function run(?int $cycles = null): void
     {
         $this->signals->install();
+        Hooks::emit(Hooks::WORKER_STARTED, $this->schedulerId);
         $cycle = 0;
-        while (!$this->shouldExit()) {
+        while (!$this->lifecycle->shouldExit($this->processed, $this->signals->shouldStop())) {
             if ($cycles !== null && $cycle >= $cycles) {
+                $this->lifecycle->request(RecycleReason::CyclesComplete);
                 break;
             }
             $cycle++;
@@ -88,12 +140,14 @@ final class SchedulerLoop
             } catch (DriverException) {
                 $this->reconnect();
             }
+            $this->resetter?->reset();
+            $this->lifecycle->afterJob();
             if ($this->options->sleepSeconds > 0 && $cycles === null) {
                 sleep($this->options->sleepSeconds);
-            } elseif ($this->options->sleepSeconds > 0 && $cycles !== null) {
-                // Tests pass cycles without sleeping.
             }
         }
+        Hooks::emit(Hooks::WORKER_STOPPING, $this->schedulerId, $this->lifecycle->reason()->value);
+        Hooks::emit(Hooks::WORKER_STOPPED, $this->schedulerId, $this->lifecycle->reason()->value);
     }
 
     private function heartbeat(): void
@@ -107,8 +161,11 @@ final class SchedulerLoop
             'hostname' => WorkerIdentity::generate($this->clock->now())->hostname,
             'pid' => getmypid() ?: 0,
             'started_at' => $this->startedAt->format(\DateTimeInterface::ATOM),
-            'status' => 'running',
+            'status' => $this->lifecycle->reason() === RecycleReason::None ? 'running' : 'stopping',
             'runtime_version' => PackageInfo::VERSION,
+            'runtime_generation' => $this->lifecycle->bootGeneration(),
+            'recycle_reason' => $this->lifecycle->reason()->value,
+            'memory_bytes' => memory_get_usage(true),
         ]);
     }
 
@@ -124,29 +181,10 @@ final class SchedulerLoop
         if ($this->reconnectable instanceof Reconnectable) {
             try {
                 $this->reconnectable->reconnect();
+                $this->logger->log('runtime.db_reconnected', ['role' => 'scheduler']);
             } catch (DriverException) {
+                $this->lifecycle->request(RecycleReason::HealthFailure);
             }
         }
-    }
-
-    private function shouldExit(): bool
-    {
-        if ($this->signals->shouldStop() || $this->stopping) {
-            return true;
-        }
-        if ($this->options->maxJobs > 0 && $this->processed >= $this->options->maxJobs) {
-            return true;
-        }
-        if ($this->options->maxRuntimeSeconds > 0) {
-            $elapsed = $this->clock->now()->getTimestamp() - $this->startedAt->getTimestamp();
-            if ($elapsed >= $this->options->maxRuntimeSeconds) {
-                return true;
-            }
-        }
-        if (memory_get_usage(true) >= $this->options->memoryBytes) {
-            return true;
-        }
-
-        return false;
     }
 }

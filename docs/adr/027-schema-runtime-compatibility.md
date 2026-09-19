@@ -6,9 +6,9 @@ Schema v3 adds `fuzeo_queue_attempts`. A 0.2 worker may still be running when 0.
 
 ## Decision
 
-`SchemaOwner::CURRENT_VERSION = 5`. Boot runs migrations through 5. `MySqlDriver::reserve` and `SchedulerLoop` refuse unless the stored schema version **equals** 5. That blocks a 0.5 process from mutating v5 rows, and blocks a 0.6 process if migrations have not finished.
+`SchemaOwner::CURRENT_VERSION = 5`. Boot runs migrations through 5. `MySqlDriver::reserve` and `SchedulerLoop` refuse unless the stored schema version **equals** 5.
 
-Operators **must restart workers and schedulers** after upgrading. Compatibility series remains `1` (autoload/runtime selection unchanged).
+Phase 7 adds in-process **runtime generation** (plugins/theme/package) so workers recycle without a schema bump. Operators **must restart workers and schedulers** after upgrading. Compatibility series remains `1`.
 
 ## Alternatives
 

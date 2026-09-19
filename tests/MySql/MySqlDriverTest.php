@@ -105,6 +105,6 @@ final class MySqlDriverTest extends MysqlTestCase
         Coordinator::bootForTesting(['driver' => 'mysql'], connection: $this->connection);
         Coordinator::bootForTesting(['driver' => 'mysql'], connection: $this->connection);
         $repo = new DatabaseMigrationRepository($this->connection);
-        self::assertSame(4, $repo->currentVersion());
+        self::assertSame(5, $repo->currentVersion());
     }
 }

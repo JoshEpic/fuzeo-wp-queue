@@ -26,8 +26,7 @@ Subcommands: `work`, `schedule-work`, `schedule-run`, `schedules`, `unique`, `id
 
 One menu slug: `fuzeo-queue`.
 
-- Single site: capability `manage_options`
-- Network admin: capability `manage_network`
-- Origin filtering happens inside that UI, not as extra menus per plugin
+- Single site: `fuzeo_queue_manage` or `manage_options`
+- Network admin: `fuzeo_queue_manage_network` or `manage_network_options`
 
-Phase 1 registers ownership hooks only. No dashboard is rendered.
+Phase 7 registers Site Health diagnostics. No operations dashboard is rendered.

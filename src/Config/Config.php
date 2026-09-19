@@ -41,6 +41,11 @@ final class Config
         public readonly int $scheduleCatchUpCutoffDays = 7,
         public readonly int $idempotencyLeaseSeconds = 60,
         public readonly int $idempotencyRetainSeconds = 604800,
+        public readonly int $generationCheckInterval = 10,
+        public readonly int $gcInterval = 50,
+        public readonly bool $runtimeReset = true,
+        public readonly bool $workerRecycleOnContextError = true,
+        public readonly int $siteHealthBacklogCritical = 1000,
     ) {
     }
 
@@ -77,6 +82,11 @@ final class Config
             scheduleCatchUpCutoffDays: $this->int($values, 'schedule_catch_up_cutoff_days', $this->scheduleCatchUpCutoffDays),
             idempotencyLeaseSeconds: $this->int($values, 'idempotency_lease_seconds', $this->idempotencyLeaseSeconds),
             idempotencyRetainSeconds: $this->int($values, 'idempotency_retain_seconds', $this->idempotencyRetainSeconds),
+            generationCheckInterval: $this->int($values, 'generation_check_interval', $this->generationCheckInterval),
+            gcInterval: $this->int($values, 'gc_interval', $this->gcInterval),
+            runtimeReset: $this->bool($values, 'runtime_reset', $this->runtimeReset),
+            workerRecycleOnContextError: $this->bool($values, 'worker_recycle_on_context_error', $this->workerRecycleOnContextError),
+            siteHealthBacklogCritical: $this->int($values, 'site_health_backlog_critical', $this->siteHealthBacklogCritical),
         );
     }
 

@@ -8,7 +8,7 @@ composer require fuzeowp/queue
 
 Fuzeo Queue is a Composer library, not a WordPress plugin and not a wrapper around WP-Cron or Action Scheduler. It owns its queue architecture.
 
-Phase 6 adds durable job chains, parallel batches, cooperative cancellation, and crash-safe orchestration. Delivery remains **at-least-once**. Chains and batches do not provide exactly-once execution.
+Phase 7 hardens long-running WordPress workers (baseline restore, runtime generation recycle, Site Health). Delivery remains **at-least-once**.
 
 ## Requirements
 
@@ -87,6 +87,9 @@ Fuzeo Queue is **at-least-once**. A worker may crash after a side effect and bef
 - [MySQL driver](docs/mysql.md)
 - [Redis driver](docs/redis.md)
 - [Workers](docs/workers.md)
+- [Long-running workers](docs/long-running-workers.md)
+- [Operations](docs/operations.md)
+- [WooCommerce](docs/woocommerce.md)
 - [Troubleshooting](docs/troubleshooting.md)
 - [Testing](docs/testing.md)
 - [Configuration](docs/configuration.md)

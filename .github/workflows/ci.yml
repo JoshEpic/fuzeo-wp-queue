@@ -63,14 +63,27 @@ jobs:
           FUZEO_QUEUE_TEST_REDIS_PORT: 6379
           FUZEO_QUEUE_TEST_REDIS_DB: 15
         run: vendor/bin/phpunit
-      - name: WordPress test suite
+      - name: WordPress test suite (latest)
         env:
           FUZEO_QUEUE_TEST_DB_HOST: 127.0.0.1
           FUZEO_QUEUE_TEST_DB_USER: root
           FUZEO_QUEUE_TEST_DB_PASS: root
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y rsync
+          sudo apt-get install -y rsync mysql-client
+          mysql -h127.0.0.1 -uroot -proot -e "CREATE DATABASE IF NOT EXISTS wordpress_test;"
           bash bin/install-wp-tests.sh wordpress_test root root 127.0.0.1 latest true
+          export WP_TESTS_DIR="${TMPDIR:-/tmp}/wordpress-tests-lib"
+          vendor/bin/phpunit --testsuite WordPress
+      - name: WordPress test suite (6.2 minimum)
+        if: matrix.php == '8.1'
+        env:
+          FUZEO_QUEUE_TEST_DB_HOST: 127.0.0.1
+          FUZEO_QUEUE_TEST_DB_USER: root
+          FUZEO_QUEUE_TEST_DB_PASS: root
+        run: |
+          rm -rf "${TMPDIR:-/tmp}/wordpress" "${TMPDIR:-/tmp}/wordpress-tests-lib"
+          mysql -h127.0.0.1 -uroot -proot -e "CREATE DATABASE IF NOT EXISTS wordpress_test_min;"
+          bash bin/install-wp-tests.sh wordpress_test_min root root 127.0.0.1 6.2 true
           export WP_TESTS_DIR="${TMPDIR:-/tmp}/wordpress-tests-lib"
           vendor/bin/phpunit --testsuite WordPress

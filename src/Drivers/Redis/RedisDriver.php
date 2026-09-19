@@ -93,6 +93,11 @@ final class RedisDriver implements QueueDriver, FailureStore, ReliableAcknowledg
         $this->redis->command('HSET', [$this->keys->meta(), 'driver', 'redis', 'package', 'fuzeowp/queue', 'schema_version', '5']);
     }
 
+    public function redis(): RedisClient
+    {
+        return $this->redis;
+    }
+
     public function uniqueStore(): UniqueStore
     {
         return $this->uniques;

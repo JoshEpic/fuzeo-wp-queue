@@ -68,3 +68,5 @@ export FUZEO_QUEUE_TEST_REDIS_DB=15
 vendor/bin/phpunit --testsuite Redis,Conformance
 ```
 
+WordPress Core / multisite tests require `WP_TESTS_DIR` (see `bin/install-wp-tests.sh`). WooCommerce tests skip unless WooCommerce is installed in that suite. Minimum supported WordPress is 6.2.
+

@@ -33,14 +33,16 @@ The persisted identity is `type()`, not the PHP class name. Class names may chan
 ```php
 $runtime->jobs()->registerJob(
     ProcessOrder::class,
-    new Origin('acme/shop', '1.0.0'),
+    new Origin('acme/shop', '1.2.0', 'acme-shop/acme-shop.php'),
     ProcessOrderHandler::class, // optional; defaults to the job class
 );
 ```
 
 Duplicate types are allowed only when handler class, schema version, and job class match. Any other conflict throws `DuplicateJobTypeException`. Unknown types throw `UnknownJobException`.
 
-Handlers implement `Handler::handle(Envelope $envelope)` and must be constructible with no required arguments. Unknown types and unsupported payload schema versions dead-letter. After the origin plugin is restored, `wp fuzeo-queue failed retry <id>` can run the same job identity again.
+Pass `plugin_file` on `Origin` so workers can refuse jobs when that plugin is inactive on the target site. Classes still loaded in a long-running process are not treated as active.
+
+Handlers implement `Handler::handle(Envelope $envelope)` and must be constructible with no required arguments. Unknown types, unavailable origin plugins, and unsupported payload schema versions dead-letter. After the origin plugin is restored, `wp fuzeo-queue failed retry <id>` can run the same job identity again.
 
 See [retries](retries.md) for policies, backoff, and at-least-once caveats.
 

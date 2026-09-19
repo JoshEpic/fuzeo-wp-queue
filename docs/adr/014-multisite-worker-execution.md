@@ -16,4 +16,4 @@ Always switch: wrong for network jobs. Infer site at execute time: loses dispatc
 
 ## Consequences
 
-Deleted sites become failed jobs (Phase 3 may dead-letter them).
+Deleted, archived, and spam sites are not executable. Nested `switch_to_blog()` is unwound to the worker baseline ([ADR-065](065-multisite-context-restoration.md)).

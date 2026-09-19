@@ -7,46 +7,48 @@ namespace Fuzeo\Queue\Worker;
 use Fuzeo\Queue\Exceptions\SiteUnavailableException;
 use Fuzeo\Queue\Jobs\ExecutionContext;
 use Fuzeo\Queue\Jobs\ExecutionScope;
+use Fuzeo\Queue\Runtime\NativeWordPressRuntime;
+use Fuzeo\Queue\Runtime\WordPressRuntime;
 
 final class WordPressSiteSwitcher implements SiteSwitcher
 {
+    public function __construct(
+        private readonly WordPressRuntime $wp = new NativeWordPressRuntime(),
+        private readonly SitePolicy $policy = new SitePolicy(),
+    ) {
+    }
+
     public function run(ExecutionContext $context, callable $callback): mixed
     {
-        if ($context->scope === ExecutionScope::Network) {
-            return $callback();
+        $depth = $this->wp->switchedStackDepth();
+        $originBlog = $this->wp->currentBlogId();
+        if ($context->scope === ExecutionScope::Site) {
+            $this->policy->assertExecutable($this->wp, $context);
+            $this->wp->switchToBlog($context->siteId);
+            if (function_exists('switch_to_blog') && $this->wp->currentBlogId() !== $context->siteId) {
+                throw new SiteUnavailableException(
+                    'Site ' . $context->siteId . ' could not be switched into. The job will not run against another blog.'
+                );
+            }
         }
-
-        if (!function_exists('switch_to_blog') || !function_exists('restore_current_blog')) {
-            throw new SiteUnavailableException('WordPress blog switching is unavailable.');
-        }
-
-        if (!$this->siteExists($context->siteId)) {
-            throw new SiteUnavailableException(
-                'Site ' . $context->siteId . ' no longer exists. The job will not run against another blog.'
-            );
-        }
-
-        switch_to_blog($context->siteId);
         try {
             return $callback();
         } finally {
-            restore_current_blog();
+            $this->unwind($depth, $originBlog);
         }
     }
 
-    private function siteExists(int $siteId): bool
+    private function unwind(int $depth, int $originBlog): void
     {
-        if (function_exists('get_site')) {
-            $site = get_site($siteId);
-
-            return $site !== null && $site !== false;
+        $guard = 32;
+        while ($guard-- > 0 && $this->wp->switchedStackDepth() > $depth) {
+            $this->wp->restorePreviousBlog();
         }
-        if (function_exists('get_blog_details')) {
-            $details = get_blog_details($siteId);
-
-            return $details !== false && $details !== null;
+        if ($this->wp->currentBlogId() !== $originBlog) {
+            $this->wp->restoreBlog();
+            if ($this->wp->currentBlogId() !== $originBlog) {
+                $this->wp->switchToBlog($originBlog);
+            }
         }
-
-        return $siteId === (function_exists('get_current_blog_id') ? (int) get_current_blog_id() : 1);
     }
 }

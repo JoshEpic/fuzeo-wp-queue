@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Fuzeo\Queue\WordPress\Admin;
 
+use Fuzeo\Queue\WordPress\Capabilities;
+
 /**
  * Single admin entry point owned by the winning runtime.
  *
@@ -16,8 +18,8 @@ namespace Fuzeo\Queue\WordPress\Admin;
 final class AdminRegistrar
 {
     public const MENU_SLUG = 'fuzeo-queue';
-    public const CAPABILITY_SITE = 'manage_options';
-    public const CAPABILITY_NETWORK = 'manage_network';
+    public const CAPABILITY_SITE = Capabilities::FALLBACK_SITE;
+    public const CAPABILITY_NETWORK = Capabilities::FALLBACK_NETWORK;
 
     public static function register(): void
     {

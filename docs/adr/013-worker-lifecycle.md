@@ -10,7 +10,7 @@ HTTP request workers cannot outlive the request. Persistent CLI processes can le
 
 `pcntl` is recommended. SIGTERM finishes the current job. SIGKILL relies on leases.
 
-Hooks: `fuzeo_queue_before_job`, `fuzeo_queue_after_job`, `fuzeo_queue_job_failed`, `fuzeo_queue_worker_stopping`.
+Hooks: `fuzeo_queue_before_job`, `fuzeo_queue_after_job`, `fuzeo_queue_job_failed`, `fuzeo_queue_worker_stopping`, plus Phase 7 lifecycle hooks in [ADR-063](063-long-running-wordpress-runtime-model.md).
 
 ## Alternatives
 

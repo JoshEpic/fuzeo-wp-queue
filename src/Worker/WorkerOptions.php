@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Fuzeo\Queue\Worker;
 
+use Fuzeo\Queue\Config\Config;
 use Fuzeo\Queue\Jobs\QueueName;
 
 final class WorkerOptions
@@ -21,6 +22,11 @@ final class WorkerOptions
         public readonly int $maxRuntimeSeconds = 0,
         public readonly int $heartbeatIntervalSeconds = 10,
         public readonly int $staleWorkerSeconds = 30,
+        public readonly int $generationCheckInterval = 10,
+        public readonly int $gcInterval = 50,
+        public readonly bool $runtimeReset = true,
+        public readonly bool $recycleOnContextError = true,
+        public readonly string $processTitle = '',
     ) {
         if ($this->queues === []) {
             throw new \Fuzeo\Queue\Exceptions\QueueException('A worker must listen to at least one queue.');
@@ -39,22 +45,29 @@ final class WorkerOptions
     /**
      * @param array<string, mixed> $flags
      */
-    public static function fromCli(array $flags, string $defaultQueue = QueueName::DEFAULT): self
+    public static function fromCli(array $flags, string $defaultQueue = QueueName::DEFAULT, ?Config $config = null): self
     {
         $queues = $defaultQueue;
         if (isset($flags['queue']) && is_string($flags['queue']) && $flags['queue'] !== '') {
             $queues = $flags['queue'];
         }
         $list = array_values(array_filter(array_map('trim', explode(',', $queues))));
+        $defaults = $config ?? new Config();
 
         return new self(
             queues: $list === [] ? [$defaultQueue] : array_map([QueueName::class, 'normalize'], $list),
-            sleepSeconds: self::intFlag($flags, 'sleep', 1),
-            timeoutSeconds: self::intFlag($flags, 'timeout', 60),
-            leaseSeconds: self::intFlag($flags, 'lease', 90),
-            memoryBytes: self::memoryFlag($flags['memory'] ?? '128M'),
-            maxJobs: self::intFlag($flags, 'max-jobs', 0),
-            maxRuntimeSeconds: self::intFlag($flags, 'max-runtime', 0),
+            sleepSeconds: self::intFlag($flags, 'sleep', $defaults->workerSleepSeconds),
+            timeoutSeconds: self::intFlag($flags, 'timeout', $defaults->workerTimeoutSeconds),
+            leaseSeconds: self::intFlag($flags, 'lease', $defaults->leaseSeconds),
+            memoryBytes: self::memoryFlag($flags['memory'] ?? $defaults->workerMemoryBytes),
+            maxJobs: self::intFlag($flags, 'max-jobs', $defaults->workerMaxJobs),
+            maxRuntimeSeconds: self::intFlag($flags, 'max-runtime', $defaults->workerMaxRuntimeSeconds),
+            heartbeatIntervalSeconds: $defaults->heartbeatIntervalSeconds,
+            staleWorkerSeconds: $defaults->staleWorkerSeconds,
+            generationCheckInterval: $defaults->generationCheckInterval,
+            gcInterval: $defaults->gcInterval,
+            runtimeReset: $defaults->runtimeReset,
+            recycleOnContextError: $defaults->workerRecycleOnContextError,
         );
     }
 

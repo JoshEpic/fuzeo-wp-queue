@@ -110,6 +110,74 @@ if (!function_exists('add_action')) {
 
         return delete_option($key);
     }
+
+    function __(string $text, string $domain = 'default'): string
+    {
+        unset($domain);
+
+        return $text;
+    }
+
+    function get_current_user_id(): int
+    {
+        return (int) ($GLOBALS['fuzeo_wp_user_id'] ?? 0);
+    }
+
+    function wp_set_current_user(int $id): void
+    {
+        $GLOBALS['fuzeo_wp_user_id'] = $id;
+    }
+
+    function get_locale(): string
+    {
+        return (string) ($GLOBALS['fuzeo_wp_locale'] ?? 'en_US');
+    }
+
+    function restore_current_locale(): bool
+    {
+        $GLOBALS['fuzeo_wp_locale'] = 'en_US';
+
+        return true;
+    }
+
+    function wp_reset_query(): void
+    {
+    }
+
+    function wp_reset_postdata(): void
+    {
+    }
+
+    function wp_cache_flush_runtime(): bool
+    {
+        return true;
+    }
+
+    function is_multisite(): bool
+    {
+        return (bool) ($GLOBALS['fuzeo_wp_multisite'] ?? false);
+    }
+
+    function is_plugin_active(string $plugin): bool
+    {
+        $active = $GLOBALS['fuzeo_wp_active_plugins'] ?? [];
+
+        return is_array($active) && in_array($plugin, $active, true);
+    }
+
+    function is_plugin_active_for_network(string $plugin): bool
+    {
+        $active = $GLOBALS['fuzeo_wp_network_plugins'] ?? [];
+
+        return is_array($active) && in_array($plugin, $active, true);
+    }
+
+    function current_user_can(string $capability): bool
+    {
+        $caps = $GLOBALS['fuzeo_wp_caps'] ?? [];
+
+        return is_array($caps) && in_array($capability, $caps, true);
+    }
 }
 
 if (!class_exists('WP_CLI')) {

@@ -8,13 +8,8 @@ final class SignalListener
 {
     private bool $stopRequested = false;
 
-    private bool $enabled = false;
-
     public function install(): void
     {
-        if ($this->enabled) {
-            return;
-        }
         if (!function_exists('pcntl_async_signals') || !function_exists('pcntl_signal')) {
             return;
         }
@@ -24,7 +19,6 @@ final class SignalListener
         };
         pcntl_signal(SIGTERM, $handler);
         pcntl_signal(SIGINT, $handler);
-        $this->enabled = true;
     }
 
     public function requestStop(): void

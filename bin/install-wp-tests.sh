@@ -14,17 +14,35 @@ WP_TESTS="${WP_TESTS_DIR:-$TMP/wordpress-tests-lib}"
 
 mkdir -p "$WP_CORE" "$WP_TESTS"
 
-if [[ ! -f "$WP_CORE/wp-load.php" ]]; then
-  curl -sL "https://wordpress.org/latest.tar.gz" | tar -xz -C "$TMP"
-  rsync -a "$TMP/wordpress/" "$WP_CORE/"
-fi
+download_core() {
+  if [[ -f "$WP_CORE/wp-load.php" ]]; then
+    return
+  fi
+  if [[ "$WP_VERSION" == "latest" ]]; then
+    curl -sL "https://wordpress.org/latest.tar.gz" | tar -xz -C "$TMP"
+    rsync -a "$TMP/wordpress/" "$WP_CORE/"
+  else
+    curl -sL "https://wordpress.org/wordpress-${WP_VERSION}.tar.gz" | tar -xz -C "$TMP"
+    rsync -a "$TMP/wordpress/" "$WP_CORE/"
+  fi
+}
 
-if [[ ! -f "$WP_TESTS/includes/functions.php" ]]; then
+download_tests() {
+  if [[ -f "$WP_TESTS/includes/functions.php" ]]; then
+    return
+  fi
+  local ref="trunk"
+  if [[ "$WP_VERSION" != "latest" ]]; then
+    ref="$WP_VERSION"
+  fi
   curl -sL "https://github.com/WordPress/wordpress-develop/archive/refs/heads/trunk.tar.gz" | tar -xz -C "$TMP"
   rsync -a "$TMP"/wordpress-develop-trunk/tests/phpunit/includes "$WP_TESTS/"
   rsync -a "$TMP"/wordpress-develop-trunk/tests/phpunit/data "$WP_TESTS/" 2>/dev/null || true
-  cp "$TMP"/wordpress-develop-trunk/wp-tests-config-sample.php "$WP_TESTS/wp-tests-config.php"
-fi
+  unset ref
+}
+
+download_core
+download_tests
 
 cat > "$WP_TESTS/wp-tests-config.php" <<PHP
 <?php

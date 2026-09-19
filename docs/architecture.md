@@ -21,13 +21,16 @@ src/
   Orchestration/         chains, batches, cancellation, reconcile
   Retention/             prune policy
   Persistence/           migrations, PDO/$wpdb connections, GET_LOCK
-  Worker/                loop, identity, timeouts, site switching
-  WordPress/             context, CLI (`work|schedule-work|schedules|unique|…`), admin
+  Worker/                loop, identity, timeouts, site switching, handler availability
+  Runtime/               coordinator, generation, resetter, process lifecycle
+  WordPress/             context, CLI, Site Health, capabilities
 ```
 
 ## Driver operations
 
 See [ADR-005](adr/005-queue-driver-contract.md) and [ADR-011](adr/011-atomic-mysql-reservation.md).
+
+Supported WordPress is **6.2+** (needed for `wp_cache_flush_runtime`). PHP **8.1+**. WooCommerce is optional.
 
 ## Schema
 

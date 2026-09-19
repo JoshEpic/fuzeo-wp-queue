@@ -105,6 +105,11 @@ final class ConfigRepository
             'FUZEO_QUEUE_SCHEDULE_CATCH_UP_CUTOFF_DAYS' => 'schedule_catch_up_cutoff_days',
             'FUZEO_QUEUE_IDEMPOTENCY_LEASE_SECONDS' => 'idempotency_lease_seconds',
             'FUZEO_QUEUE_IDEMPOTENCY_RETAIN_SECONDS' => 'idempotency_retain_seconds',
+            'FUZEO_QUEUE_GENERATION_CHECK_INTERVAL' => 'generation_check_interval',
+            'FUZEO_QUEUE_GC_INTERVAL' => 'gc_interval',
+            'FUZEO_QUEUE_RUNTIME_RESET' => 'runtime_reset',
+            'FUZEO_QUEUE_WORKER_RECYCLE_ON_CONTEXT_ERROR' => 'worker_recycle_on_context_error',
+            'FUZEO_QUEUE_SITE_HEALTH_BACKLOG_CRITICAL' => 'site_health_backlog_critical',
         ];
 
         $values = [];
