@@ -125,6 +125,56 @@ final class RedisKeys
         return $this->prefix . ':schedulers';
     }
 
+    public function chain(string $chainId): string
+    {
+        return $this->prefix . ':chain:' . $chainId;
+    }
+
+    public function chainStep(string $chainId, int $step): string
+    {
+        return $this->prefix . ':chain:' . $chainId . ':step:' . $step;
+    }
+
+    public function chainsIncomplete(): string
+    {
+        return $this->prefix . ':chains:incomplete';
+    }
+
+    public function chainsAll(): string
+    {
+        return $this->prefix . ':chains';
+    }
+
+    public function batch(string $batchId): string
+    {
+        return $this->prefix . ':batch:' . $batchId;
+    }
+
+    public function batchMember(string $batchId, int $index): string
+    {
+        return $this->prefix . ':batch:' . $batchId . ':member:' . $index;
+    }
+
+    public function batchesIncomplete(): string
+    {
+        return $this->prefix . ':batches:incomplete';
+    }
+
+    public function batchesCreating(): string
+    {
+        return $this->prefix . ':batches:creating';
+    }
+
+    public function batchesAll(): string
+    {
+        return $this->prefix . ':batches';
+    }
+
+    public function jobCancel(string $jobId): string
+    {
+        return $this->prefix . ':cancel:' . $jobId;
+    }
+
     public function meta(): string
     {
         return $this->prefix . ':meta';

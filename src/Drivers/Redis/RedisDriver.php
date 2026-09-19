@@ -17,6 +17,9 @@ use Fuzeo\Queue\Drivers\ProvidesScheduleStore;
 use Fuzeo\Queue\Drivers\ProvidesUniqueStore;
 use Fuzeo\Queue\Drivers\ProvidesWorkerStore;
 use Fuzeo\Queue\Drivers\QueueDriver;
+use Fuzeo\Queue\Drivers\CancelsJobs;
+use Fuzeo\Queue\Drivers\CancelResult;
+use Fuzeo\Queue\Drivers\ProvidesOrchestration;
 use Fuzeo\Queue\Drivers\Reconnectable;
 use Fuzeo\Queue\Drivers\ReliableAcknowledger;
 use Fuzeo\Queue\Drivers\ReleaseOptions;
@@ -36,6 +39,8 @@ use Fuzeo\Queue\Redis\RedisScripts;
 use Fuzeo\Queue\Redis\RedisSettings;
 use Fuzeo\Queue\Redis\RedisWorkerStore;
 use Fuzeo\Queue\Redis\ScriptCache;
+use Fuzeo\Queue\Orchestration\OrchestrationStore;
+use Fuzeo\Queue\Orchestration\RedisOrchestrationStore;
 use Fuzeo\Queue\Support\Dates;
 use Fuzeo\Queue\Support\SystemClock;
 use Fuzeo\Queue\Retention\PruneResult;
@@ -51,7 +56,7 @@ use Fuzeo\Queue\Unique\UniqueStore;
 use Fuzeo\Queue\Retry\AttemptRecord;
 use Fuzeo\Queue\Worker\WorkerStore;
 
-final class RedisDriver implements QueueDriver, FailureStore, ReliableAcknowledger, Reconnectable, ProvidesWorkerStore, StatusAware, ProvidesUniqueStore, ProvidesIdempotencyStore, ProvidesScheduleStore
+final class RedisDriver implements QueueDriver, FailureStore, ReliableAcknowledger, Reconnectable, ProvidesWorkerStore, StatusAware, ProvidesUniqueStore, ProvidesIdempotencyStore, ProvidesScheduleStore, ProvidesOrchestration, CancelsJobs
 {
     public const MIN_REDIS_VERSION = '6.0.0';
 
@@ -67,6 +72,8 @@ final class RedisDriver implements QueueDriver, FailureStore, ReliableAcknowledg
 
     private readonly RedisScheduleStore $schedules;
 
+    private readonly RedisOrchestrationStore $orchestration;
+
     private int $lastThrottleWait = 0;
 
     public function __construct(
@@ -81,8 +88,9 @@ final class RedisDriver implements QueueDriver, FailureStore, ReliableAcknowledg
         $this->uniques = new RedisUniqueStore($redis, $this->keys, $this->scripts);
         $this->idempotency = new RedisIdempotencyStore($redis, $this->keys, $this->scripts, $clock);
         $this->schedules = new RedisScheduleStore($redis, $this->keys, $clock);
+        $this->orchestration = new RedisOrchestrationStore($redis, $this->keys, $clock);
         $this->assertVersion();
-        $this->redis->command('HSET', [$this->keys->meta(), 'driver', 'redis', 'package', 'fuzeowp/queue', 'schema_version', '4']);
+        $this->redis->command('HSET', [$this->keys->meta(), 'driver', 'redis', 'package', 'fuzeowp/queue', 'schema_version', '5']);
     }
 
     public function uniqueStore(): UniqueStore
@@ -98,6 +106,11 @@ final class RedisDriver implements QueueDriver, FailureStore, ReliableAcknowledg
     public function scheduleStore(): ScheduleStore
     {
         return $this->schedules;
+    }
+
+    public function orchestration(): OrchestrationStore
+    {
+        return $this->orchestration;
     }
 
     public function client(): RedisClient
@@ -578,7 +591,70 @@ final class RedisDriver implements QueueDriver, FailureStore, ReliableAcknowledg
             highConcurrency: true,
             scheduling: true,
             idempotency: true,
+            chains: true,
+            batches: true,
+            cancellation: true,
         );
+    }
+
+    public function cancel(string $jobId): CancelResult
+    {
+        $queue = $this->redis->command('HGET', [$this->keys->job($jobId), 'queue']);
+        $queueName = is_string($queue) && $queue !== '' ? $queue : 'default';
+        $raw = $this->scripts->run(
+            'cancel',
+            RedisScripts::CANCEL,
+            [
+                $this->keys->job($jobId),
+                $this->keys->ready($queueName),
+                $this->keys->delayed($queueName),
+                $this->keys->reserved(),
+                $this->keys->concurrency($queueName),
+            ],
+            [$jobId, (string) $this->clock->now()->getTimestamp()]
+        );
+        $list = is_array($raw) ? $raw : ['not_found'];
+        $outcome = (string) ($list[0] ?? 'not_found');
+        if ($outcome === 'not_found') {
+            return new CancelResult(CancelResult::NOT_FOUND, null, $jobId);
+        }
+        if ($outcome === 'cancelled') {
+            return new CancelResult(CancelResult::CANCELLED, JobState::Cancelled, $jobId);
+        }
+        if ($outcome === 'cancel_requested') {
+            return new CancelResult(CancelResult::CANCEL_REQUESTED, JobState::Reserved, $jobId);
+        }
+        $state = JobState::tryFrom((string) ($list[1] ?? ''));
+
+        return new CancelResult(CancelResult::UNCHANGED, $state, $jobId);
+    }
+
+    public function isCancellationRequested(string $jobId): bool
+    {
+        $flag = $this->redis->command('HGET', [$this->keys->job($jobId), 'cancel_requested']);
+        if ($flag === '1' || $flag === 1) {
+            return true;
+        }
+        $state = $this->redis->command('HGET', [$this->keys->job($jobId), 'state']);
+
+        return $state === JobState::Cancelled->value;
+    }
+
+    public function settleCancelled(Reservation $reservation): void
+    {
+        $ok = $this->scripts->run(
+            'settle_cancelled',
+            RedisScripts::SETTLE_CANCELLED,
+            [
+                $this->keys->job($reservation->envelope->jobId),
+                $this->keys->reserved(),
+                $this->keys->concurrency($reservation->envelope->queue),
+            ],
+            [$reservation->token->value, $reservation->envelope->jobId]
+        );
+        if ((int) $ok !== 1) {
+            throw new DriverException('Reservation token is not the active owner of job ' . $reservation->envelope->jobId . '.');
+        }
     }
 
     public function ping(): bool

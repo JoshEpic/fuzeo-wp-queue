@@ -34,6 +34,8 @@ Reservation, leases, attempt-on-reserve, stale ACK, retry, dead-letter, revive, 
 
 Ready-queue order is `priority DESC, available_at ASC`. Ties are Redis member order (ULID), not a second `job_id ASC` column.
 
+Meta `schema_version` **5** stores chain/batch hashes and cancel flags. Semantics match MySQL ([ADR-061](adr/061-mysql-redis-orchestration-parity.md)).
+
 ## Concurrency and rate limits
 
 ```php

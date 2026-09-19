@@ -160,6 +160,57 @@ final class FakeQueue
         );
     }
 
+    public function assertChainDispatched(): void
+    {
+        foreach ($this->dispatched as $envelope) {
+            if ($envelope->chainId !== null) {
+                return;
+            }
+        }
+
+        throw new \Fuzeo\Queue\Exceptions\QueueException('No chain jobs were dispatched.');
+    }
+
+    public function assertBatchDispatched(): void
+    {
+        foreach ($this->dispatched as $envelope) {
+            if ($envelope->batchId !== null) {
+                return;
+            }
+        }
+
+        throw new \Fuzeo\Queue\Exceptions\QueueException('No batch jobs were dispatched.');
+    }
+
+    public function assertBatchSize(int $size): void
+    {
+        $ids = [];
+        foreach ($this->dispatched as $envelope) {
+            if ($envelope->batchId !== null) {
+                $ids[$envelope->batchId] = ($ids[$envelope->batchId] ?? 0) + 1;
+            }
+        }
+        foreach ($ids as $count) {
+            if ($count === $size) {
+                return;
+            }
+        }
+
+        throw new \Fuzeo\Queue\Exceptions\QueueException('No batch of size ' . $size . ' was dispatched.');
+    }
+
+    public function runUntilIdle(int $maxJobs = 200): int
+    {
+        $runtime = \Fuzeo\Queue\Runtime\Coordinator::get();
+        $worker = \Fuzeo\Queue\Worker\WorkerLoop::fromManager(
+            $runtime,
+            new \Fuzeo\Queue\Worker\WorkerOptions(sleepSeconds: 0, maxJobs: $maxJobs)
+        );
+        $worker->run();
+
+        return $worker->processed();
+    }
+
     private function resolveType(string $jobTypeOrClass): string
     {
         if (is_a($jobTypeOrClass, Job::class, true)) {

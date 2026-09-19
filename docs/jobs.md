@@ -54,9 +54,12 @@ Queue::on('fulfillment')->dispatch($job);
 Queue::later($timestamp, $job);
 Queue::on('imports')->onSite(1, 42)->dispatch($job);
 Queue::dispatchResult($job); // accepted vs unique duplicate
+Queue::chain([$a, $b, $c])->dispatch();
+Queue::batch([$chunk1, $chunk2])->then($finalize)->dispatch();
+Queue::cancel($jobId);
 ```
 
-Delayed jobs: [delayed-jobs.md](delayed-jobs.md). Recurring work: [schedules.md](schedules.md). Implement `UniqueJob` for enqueue dedupe ([unique-jobs.md](unique-jobs.md)). Use `Queue::idempotency()` for logical operations ([idempotency.md](idempotency.md)). These are separate features.
+Delayed jobs: [delayed-jobs.md](delayed-jobs.md). Recurring work: [schedules.md](schedules.md). Chains: [chains.md](chains.md). Batches: [batches.md](batches.md). Cancellation: [cancellation.md](cancellation.md). Implement `UniqueJob` for enqueue dedupe ([unique-jobs.md](unique-jobs.md)). Use `Queue::idempotency()` for logical operations ([idempotency.md](idempotency.md)). These are separate features. Envelope `chain_id`, `batch_id`, and `parent_job_id` are the orchestration links.
 
 With WordPress `$wpdb` present, dispatch uses the MySQL driver. Use `Queue::fake()` in tests.
 

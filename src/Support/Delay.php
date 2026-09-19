@@ -42,7 +42,7 @@ final class Delay
         if (preg_match('/^[+-]/', $trimmed) === 1) {
             try {
                 $utc = $now->modify($trimmed);
-            } catch (\Exception $exception) {
+            } catch (\Throwable $exception) { // @phpstan-ignore catch.neverThrown (PHP <8.3 modify() does not throw)
                 throw new InvalidDelayException('Invalid relative delay "' . $trimmed . '".', 0, $exception);
             }
             if ($utc === false) {

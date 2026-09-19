@@ -11,7 +11,7 @@ Fuzeo Queue is **at-least-once**. If a worker crashes after a side effect and be
 
 ## Queue table missing
 
-Schema version must be 2. Boot the runtime inside WordPress (`plugins_loaded`) so Fuzeo Queue owns the migration. `wp fuzeo-queue status` reports schema/driver health.
+Schema version must be 5. Boot the runtime inside WordPress (`plugins_loaded`) so Fuzeo Queue owns the migration. `wp fuzeo-queue status` reports schema/driver health. Restart workers after upgrading.
 
 ## Stale worker
 
@@ -23,7 +23,11 @@ Failed ACK is never treated as success (`AmbiguousAckException`). The job stays 
 
 ## Unsupported job type / plugin deactivated
 
-The worker **fails** the job. It does not invent a handler or unserialize a PHP class.
+The worker **fails** the job. It does not invent a handler or unserialize a PHP class. Chain/batch headers remain inspectable.
+
+## Stalled chain or batch
+
+Run `wp fuzeo-queue reconcile`. Progression uses deterministic job ids; it does not require editing tables.
 
 ## Site no longer exists
 

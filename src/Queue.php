@@ -52,6 +52,27 @@ final class Queue
         return self::runtime()->dispatcher()->on($queue);
     }
 
+    /**
+     * @param list<\Fuzeo\Queue\Jobs\Job> $jobs
+     */
+    public static function chain(array $jobs): \Fuzeo\Queue\Orchestration\PendingChain
+    {
+        return self::runtime()->chain($jobs);
+    }
+
+    /**
+     * @param list<\Fuzeo\Queue\Jobs\Job> $jobs
+     */
+    public static function batch(array $jobs): \Fuzeo\Queue\Orchestration\PendingBatch
+    {
+        return self::runtime()->batch($jobs);
+    }
+
+    public static function cancel(string $jobId): \Fuzeo\Queue\Drivers\CancelResult
+    {
+        return self::runtime()->orchestrator()->cancelJob($jobId);
+    }
+
     public static function later(\DateTimeInterface|int|string $when, Job $job): Envelope
     {
         return self::runtime()->dispatcher()->later($when, $job);
@@ -90,6 +111,16 @@ final class Queue
     public static function assertNothingDispatched(): void
     {
         self::requireFake()->assertNothingDispatched();
+    }
+
+    public static function assertChainDispatched(): void
+    {
+        self::requireFake()->assertChainDispatched();
+    }
+
+    public static function assertBatchDispatched(): void
+    {
+        self::requireFake()->assertBatchDispatched();
     }
 
     private static function requireFake(): FakeQueue

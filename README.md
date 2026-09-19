@@ -8,7 +8,7 @@ composer require fuzeowp/queue
 
 Fuzeo Queue is a Composer library, not a WordPress plugin and not a wrapper around WP-Cron or Action Scheduler. It owns its queue architecture.
 
-Phase 5 adds delayed dispatch as a first-class API, recurring schedules, unique jobs, and idempotency primitives. Delivery remains **at-least-once**. Do not treat uniqueness or the idempotency store as exactly-once execution.
+Phase 6 adds durable job chains, parallel batches, cooperative cancellation, and crash-safe orchestration. Delivery remains **at-least-once**. Chains and batches do not provide exactly-once execution.
 
 ## Requirements
 
@@ -51,6 +51,8 @@ add_action('fuzeo_queue_ready', function ($runtime): void {
 
 Queue::dispatch(new ProcessOrder(123));
 Queue::later('+15 minutes', new ProcessOrder(123));
+Queue::chain([new ProcessOrder(1), new ProcessOrder(2)])->dispatch();
+Queue::batch([new ProcessOrder(1), new ProcessOrder(2)])->dispatch();
 
 // Independent worker / scheduler:
 // wp fuzeo-queue work
@@ -78,6 +80,9 @@ Fuzeo Queue is **at-least-once**. A worker may crash after a side effect and bef
 - [Recurring schedules](docs/schedules.md)
 - [Unique jobs](docs/unique-jobs.md)
 - [Idempotency primitives](docs/idempotency.md)
+- [Job chains](docs/chains.md)
+- [Job batches](docs/batches.md)
+- [Cancellation](docs/cancellation.md)
 - [Retries and dead letters](docs/retries.md)
 - [MySQL driver](docs/mysql.md)
 - [Redis driver](docs/redis.md)

@@ -29,6 +29,7 @@ final class DispatchOptions
         public readonly ?int $timeoutSeconds = null,
         public readonly ?\Fuzeo\Queue\Retry\RetryPolicy $retryPolicy = null,
         public readonly ?\Fuzeo\Queue\RateLimit\RateLimit $rateLimit = null,
+        public readonly ?string $jobId = null,
     ) {
     }
 
@@ -60,6 +61,26 @@ final class DispatchOptions
     public function withCorrelationId(string $id): self
     {
         return $this->cloneWith(['correlationId' => $id]);
+    }
+
+    public function withBatchId(string $id): self
+    {
+        return $this->cloneWith(['batchId' => $id]);
+    }
+
+    public function withChainId(string $id): self
+    {
+        return $this->cloneWith(['chainId' => $id]);
+    }
+
+    public function withParentJobId(?string $id): self
+    {
+        return $this->cloneWith(['parentJobId' => $id]);
+    }
+
+    public function withJobId(string $id): self
+    {
+        return $this->cloneWith(['jobId' => $id]);
     }
 
     public function withIdempotencyKey(string $key): self
@@ -120,9 +141,9 @@ final class DispatchOptions
             context: $overrides['context'] ?? $this->context,
             origin: $overrides['origin'] ?? $this->origin,
             correlationId: $overrides['correlationId'] ?? $this->correlationId,
-            batchId: $this->batchId,
-            chainId: $this->chainId,
-            parentJobId: $this->parentJobId,
+            batchId: array_key_exists('batchId', $overrides) ? $overrides['batchId'] : $this->batchId,
+            chainId: array_key_exists('chainId', $overrides) ? $overrides['chainId'] : $this->chainId,
+            parentJobId: array_key_exists('parentJobId', $overrides) ? $overrides['parentJobId'] : $this->parentJobId,
             idempotencyKey: $overrides['idempotencyKey'] ?? $this->idempotencyKey,
             uniqueKey: $overrides['uniqueKey'] ?? $this->uniqueKey,
             uniqueTtlSeconds: array_key_exists('uniqueTtlSeconds', $overrides) ? $overrides['uniqueTtlSeconds'] : $this->uniqueTtlSeconds,
@@ -132,6 +153,7 @@ final class DispatchOptions
             timeoutSeconds: $overrides['timeoutSeconds'] ?? $this->timeoutSeconds,
             retryPolicy: $overrides['retryPolicy'] ?? $this->retryPolicy,
             rateLimit: $overrides['rateLimit'] ?? $this->rateLimit,
+            jobId: array_key_exists('jobId', $overrides) ? $overrides['jobId'] : $this->jobId,
         );
     }
 }

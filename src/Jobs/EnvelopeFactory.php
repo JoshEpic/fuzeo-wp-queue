@@ -73,7 +73,7 @@ final class EnvelopeFactory
         }
 
         return new Envelope(
-            jobId: Ulid::generate(self::timestampMs($now)),
+            jobId: $this->resolveJobId($options, $now),
             envelopeVersion: Envelope::VERSION,
             jobType: $type,
             schemaVersion: $registered->schemaVersion,
@@ -126,7 +126,7 @@ final class EnvelopeFactory
         }
 
         return new Envelope(
-            jobId: Ulid::generate(self::timestampMs($now)),
+            jobId: $this->resolveJobId($options, $now),
             envelopeVersion: Envelope::VERSION,
             jobType: $type,
             schemaVersion: $registered->schemaVersion,
@@ -150,6 +150,19 @@ final class EnvelopeFactory
             createdAt: $now,
             state: JobState::Pending,
         );
+    }
+
+    private function resolveJobId(DispatchOptions $options, \DateTimeImmutable $now): string
+    {
+        if ($options->jobId !== null) {
+            if (!Ulid::isValid($options->jobId)) {
+                throw new \Fuzeo\Queue\Exceptions\QueueException('job_id must be a ULID.');
+            }
+
+            return $options->jobId;
+        }
+
+        return Ulid::generate(self::timestampMs($now));
     }
 
     private static function timestampMs(\DateTimeImmutable $now): int

@@ -22,6 +22,9 @@ final class DriverCapabilities
         public readonly bool $highConcurrency = false,
         public readonly bool $scheduling = false,
         public readonly bool $idempotency = false,
+        public readonly bool $chains = false,
+        public readonly bool $batches = false,
+        public readonly bool $cancellation = false,
     ) {
     }
 
@@ -40,6 +43,9 @@ final class DriverCapabilities
             'high_concurrency' => $this->highConcurrency,
             'scheduling' => $this->scheduling,
             'idempotency' => $this->idempotency,
+            'chains' => $this->chains,
+            'batches' => $this->batches,
+            'cancellation' => $this->cancellation,
             default => false,
         };
     }

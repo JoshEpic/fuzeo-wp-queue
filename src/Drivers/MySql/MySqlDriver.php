@@ -17,6 +17,9 @@ use Fuzeo\Queue\Drivers\ProvidesScheduleStore;
 use Fuzeo\Queue\Drivers\ProvidesUniqueStore;
 use Fuzeo\Queue\Drivers\ProvidesWorkerStore;
 use Fuzeo\Queue\Drivers\QueueDriver;
+use Fuzeo\Queue\Drivers\CancelsJobs;
+use Fuzeo\Queue\Drivers\CancelResult;
+use Fuzeo\Queue\Drivers\ProvidesOrchestration;
 use Fuzeo\Queue\Drivers\Reconnectable;
 use Fuzeo\Queue\Drivers\ReliableAcknowledger;
 use Fuzeo\Queue\Drivers\StatusAware;
@@ -29,6 +32,9 @@ use Fuzeo\Queue\Exceptions\DriverException;
 use Fuzeo\Queue\Jobs\Envelope;
 use Fuzeo\Queue\Jobs\JobState;
 use Fuzeo\Queue\Jobs\QueueName;
+use Fuzeo\Queue\Orchestration\MysqlOrchestrationStore;
+use Fuzeo\Queue\Orchestration\OrchestrationStore;
+use Fuzeo\Queue\Persistence\DuplicateKey;
 use Fuzeo\Queue\Persistence\Connection;
 use Fuzeo\Queue\Persistence\DatabaseMigrationRepository;
 use Fuzeo\Queue\Persistence\Schema;
@@ -53,7 +59,7 @@ use Fuzeo\Queue\Worker\WorkerStore;
 /**
  * Durable InnoDB driver. Reservation uses SELECT ... FOR UPDATE SKIP LOCKED.
  */
-final class MySqlDriver implements QueueDriver, FailureStore, ReliableAcknowledger, Reconnectable, StatusAware, ProvidesWorkerStore, ProvidesUniqueStore, ProvidesIdempotencyStore, ProvidesScheduleStore
+final class MySqlDriver implements QueueDriver, FailureStore, ReliableAcknowledger, Reconnectable, StatusAware, ProvidesWorkerStore, ProvidesUniqueStore, ProvidesIdempotencyStore, ProvidesScheduleStore, ProvidesOrchestration, CancelsJobs
 {
     /** @var array<string, string> */
     private array $concurrencyLocks = [];
@@ -66,6 +72,8 @@ final class MySqlDriver implements QueueDriver, FailureStore, ReliableAcknowledg
 
     private readonly MysqlScheduleStore $schedules;
 
+    private readonly MysqlOrchestrationStore $orchestration;
+
     public function __construct(
         private readonly Connection $connection,
         private readonly Clock $clock = new SystemClock(),
@@ -75,6 +83,7 @@ final class MySqlDriver implements QueueDriver, FailureStore, ReliableAcknowledg
         $this->uniques = new MysqlUniqueStore($connection, $clock);
         $this->idempotency = new MysqlIdempotencyStore($connection, $clock);
         $this->schedules = new MysqlScheduleStore($connection, $clock);
+        $this->orchestration = new MysqlOrchestrationStore($connection, $clock);
     }
 
     public function uniqueStore(): UniqueStore
@@ -90,6 +99,11 @@ final class MySqlDriver implements QueueDriver, FailureStore, ReliableAcknowledg
     public function scheduleStore(): ScheduleStore
     {
         return $this->schedules;
+    }
+
+    public function orchestration(): OrchestrationStore
+    {
+        return $this->orchestration;
     }
 
     public function workerStore(): WorkerStore
@@ -154,6 +168,13 @@ final class MySqlDriver implements QueueDriver, FailureStore, ReliableAcknowledg
             $this->connection->commit();
         } catch (\Throwable $exception) {
             $this->connection->rollBack();
+            if (DuplicateKey::matches($exception)) {
+                try {
+                    return new EnqueuedJob($this->job($envelope->jobId), false, $envelope->jobId);
+                } catch (DriverException) {
+                    throw $exception;
+                }
+            }
             throw $exception;
         }
 
@@ -201,6 +222,12 @@ final class MySqlDriver implements QueueDriver, FailureStore, ReliableAcknowledg
             }
 
             $envelope = $this->hydrate($row);
+            if ($envelope->state === JobState::Cancelled || (int) ($row['cancel_requested'] ?? 0) === 1) {
+                $this->cancelLockedRow($envelope, $now);
+                $this->connection->commit();
+
+                return null;
+            }
             if ($envelope->attempt >= $envelope->maxAttempts) {
                 $this->deadLetterLockedRow($envelope, $now);
                 $this->connection->commit();
@@ -665,7 +692,121 @@ final class MySqlDriver implements QueueDriver, FailureStore, ReliableAcknowledg
             highConcurrency: false,
             scheduling: true,
             idempotency: true,
+            chains: true,
+            batches: true,
+            cancellation: true,
         );
+    }
+
+    public function cancel(string $jobId): CancelResult
+    {
+        $this->connection->begin();
+        try {
+            $row = $this->connection->selectOne(
+                'SELECT * FROM ' . $this->jobs() . ' WHERE `job_id` = ? FOR UPDATE',
+                [$jobId]
+            );
+            if ($row === null) {
+                $this->connection->commit();
+
+                return new CancelResult(CancelResult::NOT_FOUND, null, $jobId);
+            }
+            $envelope = $this->hydrate($row);
+            $now = $this->clock->now();
+            if ($envelope->state === JobState::Pending) {
+                $cancelled = $envelope->withState(JobState::Cancelled);
+                $this->connection->execute(
+                    'UPDATE ' . $this->jobs() . '
+                     SET `state` = ?, `cancel_requested` = 1, `updated_at` = ?, `envelope` = ?,
+                         `reservation_token` = NULL, `lease_expires_at` = NULL
+                     WHERE `job_id` = ? AND `state` = ?',
+                    [
+                        JobState::Cancelled->value,
+                        $this->date($now),
+                        $this->encodeEnvelope($cancelled),
+                        $jobId,
+                        JobState::Pending->value,
+                    ]
+                );
+                $this->releaseUnique($envelope);
+                $this->connection->commit();
+
+                return new CancelResult(CancelResult::CANCELLED, JobState::Cancelled, $jobId);
+            }
+            if ($envelope->state === JobState::Reserved) {
+                $this->connection->execute(
+                    'UPDATE ' . $this->jobs() . ' SET `cancel_requested` = 1, `updated_at` = ? WHERE `job_id` = ? AND `state` = ?',
+                    [$this->date($now), $jobId, JobState::Reserved->value]
+                );
+                $this->connection->commit();
+
+                return new CancelResult(CancelResult::CANCEL_REQUESTED, JobState::Reserved, $jobId);
+            }
+            $this->connection->commit();
+
+            return new CancelResult(CancelResult::UNCHANGED, $envelope->state, $jobId);
+        } catch (\Throwable $exception) {
+            $this->connection->rollBack();
+            throw $exception;
+        }
+    }
+
+    public function isCancellationRequested(string $jobId): bool
+    {
+        $row = $this->connection->selectOne(
+            'SELECT `state`, `cancel_requested` FROM ' . $this->jobs() . ' WHERE `job_id` = ?',
+            [$jobId]
+        );
+        if ($row === null) {
+            return false;
+        }
+
+        return (int) ($row['cancel_requested'] ?? 0) === 1 || ($row['state'] ?? '') === JobState::Cancelled->value;
+    }
+
+    public function settleCancelled(Reservation $reservation): void
+    {
+        $now = $this->clock->now();
+        $cancelled = $reservation->envelope->withState(JobState::Cancelled);
+        $affected = $this->connection->execute(
+            'UPDATE ' . $this->jobs() . '
+             SET `state` = ?, `cancel_requested` = 1, `updated_at` = ?, `envelope` = ?,
+                 `reservation_token` = NULL, `lease_expires_at` = NULL
+             WHERE `job_id` = ? AND `reservation_token` = ? AND `state` = ?',
+            [
+                JobState::Cancelled->value,
+                $this->date($now),
+                $this->encodeEnvelope($cancelled),
+                $reservation->envelope->jobId,
+                $reservation->token->value,
+                JobState::Reserved->value,
+            ]
+        );
+        if ($affected !== 1) {
+            throw new DriverException('Reservation token is not the active owner of job ' . $reservation->envelope->jobId . '.');
+        }
+        $this->releaseConcurrency($reservation->envelope->jobId);
+        $this->releaseUnique($reservation->envelope);
+    }
+
+    private function cancelLockedRow(Envelope $envelope, \DateTimeImmutable $now): void
+    {
+        $cancelled = $envelope->state === JobState::Cancelled
+            ? $envelope
+            : $envelope->withState(JobState::Cancelled);
+        $this->connection->execute(
+            'UPDATE ' . $this->jobs() . '
+             SET `state` = ?, `cancel_requested` = 1, `updated_at` = ?, `envelope` = ?,
+                 `reservation_token` = NULL, `lease_expires_at` = NULL
+             WHERE `job_id` = ?',
+            [
+                JobState::Cancelled->value,
+                $this->date($now),
+                $this->encodeEnvelope($cancelled),
+                $envelope->jobId,
+            ]
+        );
+        $this->releaseUnique($envelope);
     }
 
     public function ping(): bool

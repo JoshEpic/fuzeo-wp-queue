@@ -18,6 +18,8 @@ You can set it explicitly:
 define('FUZEO_QUEUE_DRIVER', 'mysql');
 ```
 
+Schema version 5 adds `{prefix}fuzeo_queue_chains`, `{prefix}fuzeo_queue_chain_steps`, `{prefix}fuzeo_queue_batches`, `{prefix}fuzeo_queue_batch_members`, and `cancel_requested` on jobs.
+
 Schema version 4 adds:
 
 - `{prefix}fuzeo_queue_unique`

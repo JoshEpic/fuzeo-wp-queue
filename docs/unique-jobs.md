@@ -32,6 +32,8 @@ if (!$result->accepted) {
 
 `Queue::dispatch()` still returns an `Envelope` (the new or existing job). Use `dispatchResult()` when you need accepted vs duplicate.
 
+Batch members that implement `UniqueJob` use the same `unique_key` rules. A conflict is stored as member status `unique_conflict` and counts toward `failed_jobs`. **`total_jobs` is never reduced.** Chain-step and batch-member job ids are deterministic ULIDs and are not UniqueStore kinds.
+
 Keys are trimmed, 1–191 characters, no control characters. Do not hash serialized objects.
 
 Optional: `Queue::on('imports')->withUniqueKey('product:123')->withUniqueTtl(3600)->dispatch($job)`.

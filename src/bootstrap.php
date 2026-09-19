@@ -24,7 +24,7 @@ $GLOBALS['fuzeo_queue_kernel'] ??= [
 ];
 
 $GLOBALS['fuzeo_queue_kernel']['candidates'][] = [
-    'version' => '0.5.0',
+    'version' => '0.6.0',
     'compatibility_series' => 1,
     'path' => dirname(__DIR__),
     'source' => __FILE__,

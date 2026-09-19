@@ -14,7 +14,10 @@ use Fuzeo\Queue\Drivers\Reconnectable;
 use Fuzeo\Queue\Drivers\ReliableAcknowledger;
 use Fuzeo\Queue\Drivers\Reservation;
 use Fuzeo\Queue\Drivers\ReserveRequest;
+use Fuzeo\Queue\Drivers\CancelsJobs;
 use Fuzeo\Queue\Exceptions\AmbiguousAckException;
+use Fuzeo\Queue\Exceptions\JobCancelledException;
+use Fuzeo\Queue\Orchestration\Orchestrator;
 use Fuzeo\Queue\Exceptions\ConfigurationException;
 use Fuzeo\Queue\Exceptions\DriverException;
 use Fuzeo\Queue\Jobs\Envelope;
@@ -54,6 +57,8 @@ final class WorkerLoop
         private readonly FailureClassifier $classifier = new FailureClassifier(),
         private readonly RandomSource $random = new SystemRandom(),
         private readonly SecretRedactor $redactor = new SecretRedactor(),
+        private readonly ?Orchestrator $orchestrator = null,
+        private readonly ?CancelsJobs $cancellation = null,
     ) {
         $this->startedAt = $this->clock->now();
     }
@@ -81,13 +86,15 @@ final class WorkerLoop
 
         return new self(
             $driver,
-            new JobExecutor($manager->jobs()),
+            new JobExecutor($manager->jobs(), $driver instanceof CancelsJobs ? $driver : null),
             $sites,
             $options,
             $identity,
             $workers,
             $manager->clock(),
             connection: $connection,
+            orchestrator: $manager->orchestrator(),
+            cancellation: $driver instanceof CancelsJobs ? $driver : null,
         );
     }
 
@@ -117,6 +124,7 @@ final class WorkerLoop
             $reserved = $this->reserveNext();
             if ($reserved === null) {
                 $this->idle();
+                $this->orchestrator?->reconcile(10);
                 continue;
             }
             $this->process($reserved);
@@ -161,6 +169,11 @@ final class WorkerLoop
     private function process(Reservation $reservation): void
     {
         $envelope = $reservation->envelope;
+        if ($this->cancellation?->isCancellationRequested($envelope->jobId)) {
+            $this->settleCancelled($reservation);
+
+            return;
+        }
         Hooks::emit(Hooks::BEFORE_JOB, $envelope, $this->identity);
         try {
             $this->timeouts->arm($this->jobTimeout($envelope), [$this->timeouts, 'throwTimeout']);
@@ -168,8 +181,18 @@ final class WorkerLoop
                 $this->executor->execute($envelope);
             });
             $this->timeouts->disarm();
+            if ($this->cancellation?->isCancellationRequested($envelope->jobId)) {
+                $this->settleCancelled($reservation);
+
+                return;
+            }
             $this->ack($reservation);
+            $this->orchestrator?->onCompleted($envelope->withState(\Fuzeo\Queue\Jobs\JobState::Completed));
             Hooks::emit(Hooks::AFTER_JOB, $envelope, $this->identity);
+        } catch (JobCancelledException $exception) {
+            unset($exception);
+            $this->timeouts->disarm();
+            $this->settleCancelled($reservation);
         } catch (AmbiguousAckException $exception) {
             $this->timeouts->disarm();
             throw $exception;
@@ -213,6 +236,9 @@ final class WorkerLoop
         if ($this->driver instanceof FailureStore) {
             try {
                 $this->driver->settleOutcome($reservation, $record, $decision->nextState, $decision->availableAt);
+                if ($decision->nextState === \Fuzeo\Queue\Jobs\JobState::Dead) {
+                    $this->orchestrator?->onDead($reservation->envelope->withState(\Fuzeo\Queue\Jobs\JobState::Dead));
+                }
             } catch (DriverException) {
                 // Lease recovery remains the source of truth if settlement cannot persist.
             }
@@ -225,8 +251,21 @@ final class WorkerLoop
                 $reservation,
                 new Failure($record->sanitizedMessage, $exception::class, $record->sanitizedTrace)
             );
+            $this->orchestrator?->onDead($reservation->envelope->withState(\Fuzeo\Queue\Jobs\JobState::Dead));
         } catch (DriverException) {
             // Lease recovery remains the source of truth if fail cannot persist.
+        }
+    }
+
+    private function settleCancelled(Reservation $reservation): void
+    {
+        try {
+            $this->cancellation?->settleCancelled($reservation);
+        } catch (DriverException) {
+        }
+        try {
+            $this->orchestrator?->onCancelled($reservation->envelope->withState(\Fuzeo\Queue\Jobs\JobState::Cancelled));
+        } catch (\Throwable) {
         }
     }
 

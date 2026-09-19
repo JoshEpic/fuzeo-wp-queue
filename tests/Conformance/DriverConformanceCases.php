@@ -209,6 +209,59 @@ trait DriverConformanceCases
         self::assertSame(\Fuzeo\Queue\Idempotency\IdempotencyStatus::Completed, $c->status);
     }
 
+    public function testPendingCancelIsAtomicAgainstReserve(): void
+    {
+        $driver = $this->boot();
+        Queue::register(ProcessOrderJob::class, new Origin('acme/shop', '1.0.0'), ProcessOrderHandler::class);
+        $envelope = Queue::dispatch(new ProcessOrderJob(3));
+        $result = Queue::cancel($envelope->jobId);
+        self::assertSame(\Fuzeo\Queue\Drivers\CancelResult::CANCELLED, $result->outcome);
+        self::assertNull($driver->reserve(new ReserveRequest('default', 'w1', 30)));
+        self::assertSame(JobState::Cancelled, $this->store($driver)->job($envelope->jobId)->state);
+    }
+
+    public function testChainAdvancesOnlyAfterAck(): void
+    {
+        $driver = $this->boot();
+        Queue::register(ProcessOrderJob::class, new Origin('acme/shop', '1.0.0'), ProcessOrderHandler::class);
+        Queue::register(\Fuzeo\Queue\Tests\Support\ImportRecordJob::class, new Origin('acme/shop', '1.0.0'), ProcessOrderHandler::class);
+        $chain = Queue::chain([
+            new ProcessOrderJob(1),
+            new \Fuzeo\Queue\Tests\Support\ImportRecordJob('next'),
+        ])->dispatch();
+        self::assertSame(1, $driver->size('default'));
+        $worker = \Fuzeo\Queue\Worker\WorkerLoop::fromManager(
+            Coordinator::get(),
+            new \Fuzeo\Queue\Worker\WorkerOptions(sleepSeconds: 0, maxJobs: 0)
+        );
+        $worker->run(3);
+        $fresh = Coordinator::get()->orchestrator()->store()->getChain($chain->chainId);
+        self::assertNotNull($fresh);
+        self::assertSame(\Fuzeo\Queue\Orchestration\ChainState::Completed, $fresh->state);
+        self::assertSame(2, ProcessOrderHandler::$handled);
+    }
+
+    public function testBatchCountersAndFollowUp(): void
+    {
+        $this->boot();
+        Queue::register(ProcessOrderJob::class, new Origin('acme/shop', '1.0.0'), ProcessOrderHandler::class);
+        Queue::register(\Fuzeo\Queue\Tests\Support\ImportRecordJob::class, new Origin('acme/shop', '1.0.0'), ProcessOrderHandler::class);
+        $batch = Queue::batch([
+            new ProcessOrderJob(1),
+            new ProcessOrderJob(2),
+        ])->then(new \Fuzeo\Queue\Tests\Support\ImportRecordJob('done'))->dispatch();
+        $worker = \Fuzeo\Queue\Worker\WorkerLoop::fromManager(
+            Coordinator::get(),
+            new \Fuzeo\Queue\Worker\WorkerOptions(sleepSeconds: 0, maxJobs: 0)
+        );
+        $worker->run(8);
+        $fresh = Coordinator::get()->orchestrator()->store()->getBatch($batch->batchId);
+        self::assertNotNull($fresh);
+        self::assertSame(\Fuzeo\Queue\Orchestration\BatchState::Completed, $fresh->state);
+        self::assertSame(2, $fresh->completedJobs);
+        self::assertNotNull($fresh->thenJobId);
+    }
+
     protected function store(QueueDriver $driver): FailureStore
     {
         self::assertInstanceOf(FailureStore::class, $driver);

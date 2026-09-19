@@ -25,6 +25,11 @@ use Fuzeo\Queue\Schedule\Scheduler;
 use Fuzeo\Queue\Schedule\SitePresence;
 use Fuzeo\Queue\Schedule\WordPressSitePresence;
 use Fuzeo\Queue\Serialization\PayloadSerializer;
+use Fuzeo\Queue\Drivers\ProvidesOrchestration;
+use Fuzeo\Queue\Orchestration\MemoryOrchestrationStore;
+use Fuzeo\Queue\Orchestration\Orchestrator;
+use Fuzeo\Queue\Orchestration\PendingBatch;
+use Fuzeo\Queue\Orchestration\PendingChain;
 use Fuzeo\Queue\Testing\FakeQueue;
 use Fuzeo\Queue\Unique\MemoryUniqueStore;
 use Fuzeo\Queue\Unique\UniqueStore;
@@ -42,6 +47,8 @@ final class QueueManager
     private Scheduler $scheduler;
 
     private Idempotency $idempotency;
+
+    private Orchestrator $orchestrator;
 
     private readonly SitePresence $sites;
 
@@ -118,6 +125,27 @@ final class QueueManager
     public function idempotency(): Idempotency
     {
         return $this->idempotency;
+    }
+
+    public function orchestrator(): Orchestrator
+    {
+        return $this->orchestrator;
+    }
+
+    /**
+     * @param list<\Fuzeo\Queue\Jobs\Job> $jobs
+     */
+    public function chain(array $jobs): PendingChain
+    {
+        return new PendingChain($this->orchestrator, $jobs);
+    }
+
+    /**
+     * @param list<\Fuzeo\Queue\Jobs\Job> $jobs
+     */
+    public function batch(array $jobs): PendingBatch
+    {
+        return new PendingBatch($this->orchestrator, $jobs);
     }
 
     public function unique(): UniqueStore
@@ -197,6 +225,25 @@ final class QueueManager
             $this->config->idempotencyLeaseSeconds,
             $this->config->idempotencyRetainSeconds,
         );
+        $this->orchestrator = new Orchestrator(
+            $this->orchestrationStore(),
+            $this->dispatcher,
+            $this->driver(),
+            $this->clock,
+            $this->config,
+            $this->registry,
+            $this->contextResolver,
+        );
+    }
+
+    private function orchestrationStore(): \Fuzeo\Queue\Orchestration\OrchestrationStore
+    {
+        $driver = $this->driver();
+        if ($driver instanceof ProvidesOrchestration) {
+            return $driver->orchestration();
+        }
+
+        return new MemoryOrchestrationStore($this->clock);
     }
 
     private function uniqueStore(): UniqueStore

@@ -31,6 +31,7 @@ use Fuzeo\Queue\Persistence\MysqlAdvisoryLock;
 use Fuzeo\Queue\Persistence\MigrationRunner;
 use Fuzeo\Queue\Persistence\AttemptsMigration;
 use Fuzeo\Queue\Persistence\Phase5TablesMigration;
+use Fuzeo\Queue\Persistence\Phase6TablesMigration;
 use Fuzeo\Queue\Persistence\QueueTablesMigration;
 use Fuzeo\Queue\Persistence\WpdbConnection;
 use Fuzeo\Queue\Serialization\JsonPayloadSerializer;
@@ -404,6 +405,7 @@ final class Coordinator
             $migrations[] = new QueueTablesMigration(self::$connection);
             $migrations[] = new AttemptsMigration(self::$connection);
             $migrations[] = new Phase5TablesMigration(self::$connection);
+            $migrations[] = new Phase6TablesMigration(self::$connection);
         }
         $result = $manager->migrations()->run($migrations);
         $current = (int) (self::kernel()['migrations_run'] ?? 0);

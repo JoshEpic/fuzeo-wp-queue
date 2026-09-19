@@ -9,7 +9,7 @@ namespace Fuzeo\Queue\Redis;
  */
 final class RedisScripts
 {
-    public const VERSION = '3';
+    public const VERSION = '4';
 
     public const ENQUEUE = <<<'LUA'
 local jobKey = KEYS[1]
@@ -22,6 +22,9 @@ local available = ARGV[3]
 local score = ARGV[4]
 local queue = ARGV[5]
 local jobId = ARGV[6]
+if redis.call('EXISTS', jobKey) == 1 then
+  return {0, jobId}
+end
 local uniqueKey = ARGV[8]
 if uniqueKey ~= nil and uniqueKey ~= '' then
   local existing = redis.call('GET', uniqueKey)
@@ -90,8 +93,12 @@ for _, id in ipairs(expired) do
   local raw = redis.call('HGET', jobKey(id), 'envelope')
   redis.call('ZREM', reserved, id)
   redis.call('ZREM', conc, id)
-  if raw then
+    if raw then
     local env = parse(raw)
+    if redis.call('HGET', jobKey(id), 'cancel_requested') == '1' then
+      env['state'] = 'cancelled'
+      redis.call('HSET', jobKey(id), 'envelope', cjson.encode(env), 'state', 'cancelled', 'token', '', 'worker_id', '')
+    else
     local attempt = tonumber(env['attempt'] or 0)
     local maxa = tonumber(env['max_attempts'] or 3)
     local q = env['queue'] or queue
@@ -108,6 +115,7 @@ for _, id in ipairs(expired) do
       else
         redis.call('ZADD', ns .. ':ready:' .. q, score(env['priority'] or 0, av), id)
       end
+    end
     end
   end
 end
@@ -127,6 +135,11 @@ for _, id in ipairs(candidates) do
   else
     local env = parse(raw)
     if env['state'] == 'pending' then
+      if redis.call('HGET', jobKey(id), 'cancel_requested') == '1' then
+        env['state'] = 'cancelled'
+        redis.call('ZREM', ready, id)
+        redis.call('HSET', jobKey(id), 'envelope', cjson.encode(env), 'state', 'cancelled', 'cancel_requested', '1')
+      else
       local attempt = tonumber(env['attempt'] or 0)
       local maxa = tonumber(env['max_attempts'] or 3)
       if attempt >= maxa then
@@ -170,6 +183,7 @@ for _, id in ipairs(candidates) do
         end
         redis.call('HSET', jobKey(id), 'envelope', cjson.encode(env), 'state', 'reserved', 'token', token, 'worker_id', worker, 'lease_expires', tostring(lease), 'attempt', tostring(attempt))
         return { 'ok', cjson.encode(env), token, tostring(now), tostring(lease), tostring(attempt) }
+      end
       end
     else
       redis.call('ZREM', ready, id)
@@ -410,6 +424,63 @@ redis.call('EXPIRE', ownerKey, tonumber(ARGV[4]))
 return 1
 LUA;
 
+    public const CANCEL = <<<'LUA'
+local jobKey = KEYS[1]
+local ready = KEYS[2]
+local delayed = KEYS[3]
+local reserved = KEYS[4]
+local conc = KEYS[5]
+local jobId = ARGV[1]
+local now = ARGV[2]
+local raw = redis.call('HGET', jobKey, 'envelope')
+if not raw then
+  return { 'not_found' }
+end
+local env = cjson.decode(raw)
+local state = env['state'] or redis.call('HGET', jobKey, 'state')
+if state == 'pending' then
+  env['state'] = 'cancelled'
+  redis.call('ZREM', ready, jobId)
+  redis.call('ZREM', delayed, jobId)
+  redis.call('HSET', jobKey, 'envelope', cjson.encode(env), 'state', 'cancelled', 'cancel_requested', '1', 'token', '')
+  local uk = redis.call('HGET', jobKey, 'unique_redis_key')
+  if uk and uk ~= '' then
+    redis.call('DEL', uk)
+  end
+  return { 'cancelled' }
+end
+if state == 'reserved' then
+  redis.call('HSET', jobKey, 'cancel_requested', '1')
+  return { 'cancel_requested' }
+end
+return { 'unchanged', state }
+LUA;
+
+    public const SETTLE_CANCELLED = <<<'LUA'
+local jobKey = KEYS[1]
+local reserved = KEYS[2]
+local conc = KEYS[3]
+local token = ARGV[1]
+local jobId = ARGV[2]
+if redis.call('HGET', jobKey, 'token') ~= token then
+  return 0
+end
+local raw = redis.call('HGET', jobKey, 'envelope')
+if not raw then
+  return 0
+end
+local env = cjson.decode(raw)
+env['state'] = 'cancelled'
+redis.call('HSET', jobKey, 'envelope', cjson.encode(env), 'state', 'cancelled', 'cancel_requested', '1', 'token', '', 'worker_id', '')
+redis.call('ZREM', reserved, jobId)
+redis.call('ZREM', conc, jobId)
+local uk = redis.call('HGET', jobKey, 'unique_redis_key')
+if uk and uk ~= '' then
+  redis.call('DEL', uk)
+end
+return 1
+LUA;
+
     /**
      * @return array<string, string>
      */
@@ -428,6 +499,8 @@ LUA;
             'unique_release' => self::UNIQUE_RELEASE,
             'idemp_begin' => self::IDEMPOTENCY_BEGIN,
             'idemp_complete' => self::IDEMPOTENCY_COMPLETE,
+            'cancel' => self::CANCEL,
+            'settle_cancelled' => self::SETTLE_CANCELLED,
         ];
     }
 }

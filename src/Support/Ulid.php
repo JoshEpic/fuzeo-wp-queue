@@ -27,6 +27,19 @@ final class Ulid
         return $time . $random;
     }
 
+    /**
+     * Stable ULID for orchestration identities (chain step, batch member, follow-up).
+     */
+    public static function fromMaterial(string $material, int $milliseconds): string
+    {
+        if ($milliseconds < 0) {
+            throw new \InvalidArgumentException('ULID timestamp cannot be negative.');
+        }
+        $hash = hash('sha256', $material, true);
+
+        return self::encodeTime($milliseconds) . self::encodeRandom(substr($hash, 0, 10));
+    }
+
     public static function isValid(string $value): bool
     {
         if (strlen($value) !== 26) {

@@ -18,6 +18,7 @@ src/
   Unique/                atomic unique-job claims
   Idempotency/           begin/complete store
   Schedule/              definitions, calculator, scheduler loop
+  Orchestration/         chains, batches, cancellation, reconcile
   Retention/             prune policy
   Persistence/           migrations, PDO/$wpdb connections, GET_LOCK
   Worker/                loop, identity, timeouts, site switching
@@ -30,4 +31,4 @@ See [ADR-005](adr/005-queue-driver-contract.md) and [ADR-011](adr/011-atomic-mys
 
 ## Schema
 
-Version 4 adds uniqueness, idempotency, schedules, occurrence claims, and scheduler heartbeats. Version 3 added `{prefix}fuzeo_queue_attempts`. Version 2 created jobs, workers, and meta. See [ADR-010](adr/010-mysql-queue-schema.md), [ADR-022](adr/022-failure-attempt-persistence.md), and [ADR-040](adr/040-schedule-persistence-and-scheduler-architecture.md).
+Version 5 adds chains, batches, and `cancel_requested` on jobs. Version 4 added uniqueness, idempotency, schedules, occurrence claims, and scheduler heartbeats. Version 3 added `{prefix}fuzeo_queue_attempts`. Version 2 created jobs, workers, and meta. See [ADR-010](adr/010-mysql-queue-schema.md), [ADR-051](adr/051-chain-persistence-and-progression.md), and [ADR-054](adr/054-batch-persistence-and-membership.md).

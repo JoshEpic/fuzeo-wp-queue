@@ -373,10 +373,16 @@ final class QueueCommand
             $runtime->config()->deadRetentionDays,
         );
         $result = $store->prune($policy, $batch);
+        $orch = $runtime->orchestrator()->prune(
+            $policy->completedBefore($runtime->clock()->now()),
+            $policy->deadBefore($runtime->clock()->now()),
+            $batch
+        );
         $this->line(
             'pruned completed=' . $result->completedDeleted
             . ' dead=' . $result->deadDeleted
             . ' attempts=' . $result->attemptsDeleted
+            . ' orchestration=' . $orch
         );
     }
 
@@ -441,6 +447,154 @@ final class QueueCommand
             return;
         }
         $this->line('retried ' . $revived->jobId . ' state=' . $revived->state->value);
+        $runtime = Coordinator::get();
+        $runtime->orchestrator()->onRevived($revived);
+    }
+
+    /**
+     * List or manage chains.
+     *
+     * @param array<int, string> $args
+     * @param array<string, string> $assoc
+     */
+    public function chains(array $args, array $assoc): void
+    {
+        unset($assoc);
+        $orch = Coordinator::get()->orchestrator();
+        $action = $args[0] ?? 'list';
+        $id = $args[1] ?? '';
+        if ($action === 'show') {
+            $chain = $orch->store()->getChain($id);
+            if ($chain === null) {
+                $this->error('Unknown chain ' . $id . '.');
+                return;
+            }
+            $this->printLines([
+                'id' => $chain->chainId,
+                'state' => $chain->state->value,
+                'step' => $chain->currentStep . '/' . $chain->totalSteps,
+                'origin' => $chain->origin->package,
+                'site' => (string) $chain->context->siteId,
+                'failed_step' => (string) ($chain->failedStep ?? ''),
+                'failed_job' => (string) ($chain->failedJobId ?? ''),
+            ]);
+            return;
+        }
+        if ($action === 'cancel') {
+            $orch->cancelChain($id);
+            $this->line('cancelled ' . $id);
+            return;
+        }
+        if ($action === 'retry') {
+            $orch->retryChain($id);
+            $this->line('retried ' . $id);
+            return;
+        }
+        foreach ($orch->store()->listChains() as $chain) {
+            $this->line(sprintf(
+                '%s state=%s step=%d/%d origin=%s site=%s',
+                $chain->chainId,
+                $chain->state->value,
+                $chain->currentStep,
+                $chain->totalSteps,
+                $chain->origin->package,
+                (string) $chain->context->siteId
+            ));
+        }
+    }
+
+    /**
+     * List or manage batches.
+     *
+     * @param array<int, string> $args
+     * @param array<string, string> $assoc
+     */
+    public function batches(array $args, array $assoc): void
+    {
+        unset($assoc);
+        $orch = Coordinator::get()->orchestrator();
+        $action = $args[0] ?? 'list';
+        $id = $args[1] ?? '';
+        if ($action === 'show') {
+            $batch = $orch->store()->getBatch($id);
+            if ($batch === null) {
+                $this->error('Unknown batch ' . $id . '.');
+                return;
+            }
+            $done = $batch->completedJobs + $batch->failedJobs + $batch->cancelledJobs;
+            $this->printLines([
+                'id' => $batch->batchId,
+                'name' => (string) $batch->name,
+                'state' => $batch->state->value,
+                'progress' => $done . '/' . $batch->totalJobs,
+                'completed' => (string) $batch->completedJobs,
+                'failed' => (string) $batch->failedJobs,
+                'cancelled' => (string) $batch->cancelledJobs,
+                'origin' => $batch->origin->package,
+                'site' => (string) $batch->context->siteId,
+                'policy' => $batch->failurePolicy->value,
+            ]);
+            return;
+        }
+        if ($action === 'cancel') {
+            $orch->cancelBatch($id);
+            $this->line('cancelled ' . $id);
+            return;
+        }
+        foreach ($orch->store()->listBatches() as $batch) {
+            $done = $batch->completedJobs + $batch->failedJobs + $batch->cancelledJobs;
+            $this->line(sprintf(
+                '%s state=%s progress=%d/%d origin=%s site=%s',
+                $batch->batchId,
+                $batch->state->value,
+                $done,
+                $batch->totalJobs,
+                $batch->origin->package,
+                (string) $batch->context->siteId
+            ));
+        }
+    }
+
+    /**
+     * Cancel a job. Does not kill executing PHP.
+     *
+     * ## OPTIONS
+     *
+     * <id>
+     * : Job ULID.
+     *
+     * [--force]
+     * : Required. Cancellation is a terminal operator decision.
+     *
+     * @param array<int, string> $args
+     * @param array<string, string> $assoc
+     */
+    public function cancel(array $args, array $assoc): void
+    {
+        if (!isset($assoc['force'])) {
+            $this->error('Cancellation does not terminate executing PHP and is terminal. Pass --force if you understand the risk.');
+            return;
+        }
+        $id = $args[0] ?? '';
+        if ($id === '') {
+            $this->error('Provide a job id.');
+            return;
+        }
+        $result = Coordinator::get()->orchestrator()->cancelJob($id);
+        $this->line('cancel ' . $id . ' outcome=' . $result->outcome);
+    }
+
+    /**
+     * Reconcile chain/batch progression after crashes.
+     *
+     * @param array<int, string> $args
+     * @param array<string, string> $assoc
+     */
+    public function reconcile(array $args, array $assoc): void
+    {
+        unset($args, $assoc);
+        $n = Coordinator::get()->orchestrator()->reconcile(100);
+        $this->line('reconciled=' . $n);
     }
 
     /**

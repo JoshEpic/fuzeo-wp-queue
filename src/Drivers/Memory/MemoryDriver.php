@@ -16,6 +16,9 @@ use Fuzeo\Queue\Drivers\ProvidesIdempotencyStore;
 use Fuzeo\Queue\Drivers\ProvidesScheduleStore;
 use Fuzeo\Queue\Drivers\ProvidesUniqueStore;
 use Fuzeo\Queue\Drivers\QueueDriver;
+use Fuzeo\Queue\Drivers\CancelsJobs;
+use Fuzeo\Queue\Drivers\CancelResult;
+use Fuzeo\Queue\Drivers\ProvidesOrchestration;
 use Fuzeo\Queue\Drivers\StatusAware;
 use Fuzeo\Queue\Drivers\ReleaseOptions;
 use Fuzeo\Queue\Drivers\Reservation;
@@ -37,12 +40,14 @@ use Fuzeo\Queue\Idempotency\IdempotencyStore;
 use Fuzeo\Queue\Idempotency\MemoryIdempotencyStore;
 use Fuzeo\Queue\Schedule\MemoryScheduleStore;
 use Fuzeo\Queue\Schedule\ScheduleStore;
+use Fuzeo\Queue\Orchestration\MemoryOrchestrationStore;
+use Fuzeo\Queue\Orchestration\OrchestrationStore;
 use Fuzeo\Queue\Support\SystemClock;
 
 /**
  * In-process driver for tests and local experiments. Not durable across requests.
  */
-final class MemoryDriver implements QueueDriver, FailureStore, StatusAware, ProvidesUniqueStore, ProvidesIdempotencyStore, ProvidesScheduleStore
+final class MemoryDriver implements QueueDriver, FailureStore, StatusAware, ProvidesUniqueStore, ProvidesIdempotencyStore, ProvidesScheduleStore, ProvidesOrchestration, CancelsJobs
 {
     /** @var array<string, Envelope> */
     private array $jobs = [];
@@ -61,6 +66,11 @@ final class MemoryDriver implements QueueDriver, FailureStore, StatusAware, Prov
 
     private readonly MemoryScheduleStore $schedules;
 
+    /** @var array<string, bool> */
+    private array $cancelRequested = [];
+
+    private readonly MemoryOrchestrationStore $orchestration;
+
     public function __construct(
         private readonly Clock $clock = new SystemClock(),
         private readonly AdmissionPolicy $admission = new AdmissionPolicy(),
@@ -69,6 +79,7 @@ final class MemoryDriver implements QueueDriver, FailureStore, StatusAware, Prov
         $this->uniques = new MemoryUniqueStore($clock);
         $this->idempotency = new MemoryIdempotencyStore($clock);
         $this->schedules = new MemoryScheduleStore($clock);
+        $this->orchestration = new MemoryOrchestrationStore($clock);
     }
 
     public function uniqueStore(): UniqueStore
@@ -86,6 +97,11 @@ final class MemoryDriver implements QueueDriver, FailureStore, StatusAware, Prov
         return $this->schedules;
     }
 
+    public function orchestration(): OrchestrationStore
+    {
+        return $this->orchestration;
+    }
+
     public function enqueue(Envelope $envelope): EnqueuedJob
     {
         if ($envelope->state !== JobState::Pending) {
@@ -99,6 +115,9 @@ final class MemoryDriver implements QueueDriver, FailureStore, StatusAware, Prov
 
                 return new EnqueuedJob($existing, false, $acquired->jobId);
             }
+        }
+        if (isset($this->jobs[$envelope->jobId])) {
+            return new EnqueuedJob($this->jobs[$envelope->jobId], false, $envelope->jobId);
         }
 
         $this->jobs[$envelope->jobId] = $envelope;
@@ -117,6 +136,12 @@ final class MemoryDriver implements QueueDriver, FailureStore, StatusAware, Prov
                 continue;
             }
             if ($envelope->state !== JobState::Pending) {
+                continue;
+            }
+            if (isset($this->cancelRequested[$envelope->jobId])) {
+                $this->jobs[$envelope->jobId] = $envelope->withState(JobState::Cancelled);
+                unset($this->cancelRequested[$envelope->jobId]);
+                $this->releaseUnique($envelope);
                 continue;
             }
             if ($envelope->availableAt > $now) {
@@ -355,7 +380,45 @@ final class MemoryDriver implements QueueDriver, FailureStore, StatusAware, Prov
             queueConcurrency: true,
             scheduling: true,
             idempotency: true,
+            chains: true,
+            batches: true,
+            cancellation: true,
         );
+    }
+
+    public function cancel(string $jobId): CancelResult
+    {
+        $envelope = $this->jobs[$jobId] ?? null;
+        if ($envelope === null) {
+            return new CancelResult(CancelResult::NOT_FOUND, null, $jobId);
+        }
+        if ($envelope->state === JobState::Pending) {
+            $this->jobs[$jobId] = $envelope->withState(JobState::Cancelled);
+            unset($this->cancelRequested[$jobId], $this->reservations[$jobId]);
+            $this->releaseUnique($envelope);
+
+            return new CancelResult(CancelResult::CANCELLED, JobState::Cancelled, $jobId);
+        }
+        if ($envelope->state === JobState::Reserved) {
+            $this->cancelRequested[$jobId] = true;
+
+            return new CancelResult(CancelResult::CANCEL_REQUESTED, JobState::Reserved, $jobId);
+        }
+
+        return new CancelResult(CancelResult::UNCHANGED, $envelope->state, $jobId);
+    }
+
+    public function isCancellationRequested(string $jobId): bool
+    {
+        return isset($this->cancelRequested[$jobId]);
+    }
+
+    public function settleCancelled(Reservation $reservation): void
+    {
+        $current = $this->requireOwnership($reservation);
+        $this->jobs[$current->envelope->jobId] = $current->envelope->withState(JobState::Cancelled);
+        unset($this->reservations[$current->envelope->jobId], $this->cancelRequested[$current->envelope->jobId]);
+        $this->releaseUnique($current->envelope);
     }
 
     /**
@@ -387,6 +450,12 @@ final class MemoryDriver implements QueueDriver, FailureStore, StatusAware, Prov
                 continue;
             }
             $envelope = $reservation->envelope;
+            if (isset($this->cancelRequested[$jobId])) {
+                $this->jobs[$jobId] = $envelope->withState(JobState::Cancelled);
+                $this->releaseUnique($envelope);
+                unset($this->reservations[$jobId], $this->cancelRequested[$jobId]);
+                continue;
+            }
             if ($envelope->attempt >= $envelope->maxAttempts) {
                 $this->jobs[$jobId] = $envelope->withState(JobState::Dead);
                 $this->releaseUnique($envelope);

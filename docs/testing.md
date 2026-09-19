@@ -20,6 +20,10 @@ public function test_checkout_dispatches_processing(): void
 
     Queue::assertDispatched(ProcessOrder::class);
     Queue::assertDispatchedTimes(ProcessOrder::class, 1);
+    Queue::assertChainDispatched();
+    Queue::assertBatchDispatched();
+    Coordinator::get()->fake()->assertBatchSize(2);
+    Coordinator::get()->fake()->runUntilIdle();
 
     Queue::fake()->assertDispatchedOn('fulfillment', ProcessOrder::class);
     Queue::fake()->assertDispatchedWithPayload(ProcessOrder::class, ['order_id' => 123]);
