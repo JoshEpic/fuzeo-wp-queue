@@ -2,7 +2,7 @@
 
 ## Decision
 
-Envelope v1, schema 6, Lua 4 are frozen for 1.0. Sequential forward migrations only. No schema 7 to match the package number. 0.9 → 1.0 is a code upgrade plus worker recycle.
+Envelope v1 and Lua 4 remain frozen. Schema 7 is the 1.1 forward migration (`fuzeo_queue_migrations`). Sequential forward migrations only.
 
 ## Consequences
 

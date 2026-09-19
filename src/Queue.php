@@ -88,6 +88,11 @@ final class Queue
         return self::runtime()->idempotency();
     }
 
+    public static function interop(): \Fuzeo\Queue\Interop\InteropManager
+    {
+        return self::runtime()->interop();
+    }
+
     public static function fake(): FakeQueue
     {
         return self::runtime()->fake();

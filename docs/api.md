@@ -1,12 +1,13 @@
-# Public API (1.0)
+# Public API (1.1)
 
-Classification for Fuzeo Queue 1.0. Internal types may change in a minor release.
+Classification for Fuzeo Queue 1.x. Internal types may change in a minor release.
 
 ## PUBLIC STABLE
 
 | Surface | Types / names |
 | --- | --- |
-| Facade | `Fuzeo\Queue\Queue` |
+| Facade | `Fuzeo\Queue\Queue`, `Queue::interop()` |
+| Interop (1.1) | `Interop\Interop`, `Interop\AsyncRuntime`, `Interop\RuntimePolicy`, `Interop\FakeAsyncRuntime`, descriptors via `Interop::cron` / `Interop::actionScheduler` |
 | Jobs | `Jobs\Job`, `Jobs\Handler`, `Jobs\ContextualHandler`, `Jobs\JobContext`, `Jobs\Envelope`, `Jobs\Origin`, `Jobs\DispatchOptions`, `Jobs\DispatchResult`, `Jobs\UniqueJob`, `Jobs\JobState`, `Jobs\ExecutionContext`, `Jobs\ExecutionScope` |
 | Retry | `Retry\RetryPolicy`, `Retry\Retryable`, `Exceptions\RetryableException`, `Exceptions\TerminalException`, `Exceptions\RetryAfterException` |
 | Schedule | `Queue::schedule()`, `Schedule\ScheduleBook` builders |

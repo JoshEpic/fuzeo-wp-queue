@@ -4,7 +4,22 @@
 No. WP-Cron is a page-view triggered pseudo-cron. Fuzeo Queue is durable jobs plus persistent workers.
 
 **Is this Action Scheduler?**  
-No. Queue does not wrap or intercept Action Scheduler. Interoperability is explicitly out of 1.0.
+No. Queue does not wrap or intercept Action Scheduler. 1.1 can detect it, fall back at **dispatch** for consuming plugins that use `Interop::runtime()`, and migrate only declared-compatible hooks.
+
+**Why do I still see Action Scheduler actions?**  
+By default they drain in place. Queue does not steal third-party AS work.
+
+**Why isn't this cron event migratable?**  
+No migration descriptor is registered. Unknown ≠ broken.
+
+**Why isn't Queue automatically replacing WP-Cron?**  
+Global replacement would break plugins that assume web-request cron semantics. Migration is explicit.
+
+**What happens if Queue goes down?**  
+Jobs already in Queue stay in Queue. New adapter dispatches may use AS fallback if policy is `prefer_queue`. Already-queued work is not copied to AS.
+
+**Will Queue duplicate my AS jobs?**  
+Not if you follow the default: new work → Queue, existing AS drains. Do not migrate in-progress actions. Preview before `--execute`.
 
 **Do I need Redis?**  
 No. MySQL/MariaDB with SKIP LOCKED is a full production driver.

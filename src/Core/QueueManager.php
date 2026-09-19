@@ -17,6 +17,10 @@ use Fuzeo\Queue\Drivers\Redis\RedisDriver;
 use Fuzeo\Queue\Idempotency\Idempotency;
 use Fuzeo\Queue\Idempotency\IdempotencyStore;
 use Fuzeo\Queue\Idempotency\MemoryIdempotencyStore;
+use Fuzeo\Queue\Interop\InteropManager;
+use Fuzeo\Queue\Interop\MemoryMigrationStore;
+use Fuzeo\Queue\Interop\MigrationStore;
+use Fuzeo\Queue\Interop\MysqlMigrationStore;
 use Fuzeo\Queue\Deployment\DeploymentStore;
 use Fuzeo\Queue\Deployment\MemoryDeploymentStore;
 use Fuzeo\Queue\Deployment\MysqlDeploymentStore;
@@ -41,6 +45,7 @@ use Fuzeo\Queue\Operations\MysqlAuditStore;
 use Fuzeo\Queue\Operations\Operations;
 use Fuzeo\Queue\Operations\RedisAuditStore;
 use Fuzeo\Queue\Persistence\MigrationRunner;
+use Fuzeo\Queue\Persistence\Connection;
 use Fuzeo\Queue\Runtime\ConsumerRegistry;
 use Fuzeo\Queue\Runtime\NullLogger;
 use Fuzeo\Queue\Schedule\AlwaysPresentSites;
@@ -87,6 +92,10 @@ final class QueueManager
 
     private readonly SitePresence $sites;
 
+    private readonly MigrationStore $interopStore;
+
+    private ?InteropManager $interop = null;
+
     public function __construct(
         private Config $config,
         private readonly JobRegistry $registry,
@@ -96,6 +105,8 @@ final class QueueManager
         private readonly Clock $clock,
         private readonly MigrationRunner $migrations,
         ?SitePresence $sites = null,
+        ?Connection $controlPlane = null,
+        ?MigrationStore $interopStore = null,
     ) {
         $this->sites = $sites ?? (function_exists('get_current_blog_id') ? new WordPressSitePresence() : new AlwaysPresentSites());
         $this->consumers = new ConsumerRegistry();
@@ -103,6 +114,9 @@ final class QueueManager
         $this->metricsRepository = new MemoryMetricsRepository();
         $this->audit = new MemoryAuditStore();
         $this->deployment = new MemoryDeploymentStore();
+        $this->interopStore = $interopStore ?? ($controlPlane !== null
+            ? new MysqlMigrationStore($controlPlane)
+            : new MemoryMigrationStore());
         $this->rebuildObservability();
     }
 
@@ -184,6 +198,16 @@ final class QueueManager
     public function operations(): Operations
     {
         return $this->operations;
+    }
+
+    public function interop(): InteropManager
+    {
+        return $this->interop ??= InteropManager::fromManager($this, $this->interopStore);
+    }
+
+    public function useInterop(InteropManager $interop): void
+    {
+        $this->interop = $interop;
     }
 
     public function deployment(): DeploymentStore

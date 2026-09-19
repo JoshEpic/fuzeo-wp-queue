@@ -14,6 +14,8 @@ protected function setUp(): void
     Queue::fake();
 }
 
+Interop tests may use `Fuzeo\Queue\Interop\Interop::fake()` without Action Scheduler.
+
 public function test_checkout_dispatches_processing(): void
 {
     $this->checkout(orderId: 123);

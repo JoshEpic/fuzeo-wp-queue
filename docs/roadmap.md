@@ -2,7 +2,7 @@
 
 Public ideas, not dates or commitments.
 
-- **Interoperability / adoption layer:** Action Scheduler and WP-Cron coexistence, explicit migration descriptors, ecosystem diagnostics.
+- **Interoperability:** shipped in 1.1 (explicit descriptors; no global replacement).
 - Redis Cluster remains a possible future; 1.0 does not support it.
 - Pause/resume, additional backends, Prometheus/OTel exporters, and workflow DAGs are non-goals until the 1.0 contract is proven in the wild.
 

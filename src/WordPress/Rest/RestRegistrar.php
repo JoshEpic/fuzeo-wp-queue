@@ -136,6 +136,73 @@ final class RestRegistrar
 
             return ['reconciled' => $n];
         });
+        self::route('/interop/status', $get, static function (): array {
+            $op = self::operator();
+            $origin = new \Fuzeo\Queue\Jobs\Origin('fuzeowp/queue', \Fuzeo\Queue\Runtime\PackageInfo::VERSION);
+
+            return Coordinator::get()->interop()->status($origin, $op->currentSiteId, 1);
+        });
+        self::route('/interop/action-scheduler', $get, static function ($req): array {
+            $op = self::operator();
+            $limit = self::int($req, 'limit', 50);
+            $offset = self::int($req, 'offset', 0);
+
+            return [
+                'summary' => Coordinator::get()->interop()->actionSchedulerSummary(),
+                'items' => Coordinator::get()->interop()->actionSchedulerCandidates($op->currentSiteId, 1, $limit, $offset),
+            ];
+        });
+        self::route('/interop/cron', $get, static function (): array {
+            $op = self::operator();
+
+            return [
+                'summary' => Coordinator::get()->interop()->cronInspector($op->currentSiteId, 1)->summary(),
+                'items' => Coordinator::get()->interop()->cronCandidates($op->currentSiteId, 1),
+            ];
+        });
+        self::route('/interop/migrations', $get, static function ($req): array {
+            $op = self::operator();
+
+            return ['items' => Coordinator::get()->interop()->history($op->currentSiteId, self::int($req, 'limit', 50), self::int($req, 'offset', 0))];
+        });
+        self::routeWrite('/interop/migrations/plan', static function ($req): array {
+            $op = self::operator();
+            $op->assertManage($op->currentSiteId);
+            $hook = self::string($req, 'hook');
+            $source = self::string($req, 'source');
+            $context = \Fuzeo\Queue\Jobs\ExecutionContext::site(1, $op->currentSiteId);
+            $plan = $source === 'action-scheduler'
+                ? Coordinator::get()->interop()->planActionScheduler($hook, $context, self::string($req, 'action_id') !== '' ? self::string($req, 'action_id') : null, self::bool($req, 'pending'))
+                : Coordinator::get()->interop()->planCron($hook, $context);
+
+            return $plan->toArray();
+        });
+        self::routeWrite('/interop/migrations/execute', static function ($req): array {
+            $op = self::operator();
+            $op->assertManage($op->currentSiteId);
+            $hook = self::string($req, 'hook');
+            $source = self::string($req, 'source');
+            $context = \Fuzeo\Queue\Jobs\ExecutionContext::site(1, $op->currentSiteId);
+            $interop = Coordinator::get()->interop();
+            $plan = $source === 'action-scheduler'
+                ? $interop->planActionScheduler($hook, $context, self::string($req, 'action_id') !== '' ? self::string($req, 'action_id') : null, self::bool($req, 'pending'))
+                : $interop->planCron($hook, $context);
+
+            return $interop->migrate($plan, true)->toArray();
+        });
+        self::routeWrite('/interop/migrations/rollback', static function ($req): array {
+            $op = self::operator();
+            $op->assertManage($op->currentSiteId);
+            $id = self::string($req, 'migration_id');
+
+            return Coordinator::get()->interop()->rollback($id)->toArray();
+        });
+        self::routeWrite('/interop/migrations/reconcile', static function ($req): array {
+            $op = self::operator();
+            $op->assertManage($op->currentSiteId);
+
+            return Coordinator::get()->interop()->reconcile(self::string($req, 'migration_id'))->toArray();
+        });
     }
 
     /**
@@ -163,6 +230,8 @@ final class RestRegistrar
                     return rest_ensure_response($data);
                 } catch (AccessDenied $exception) {
                     return new \WP_Error('fuzeo_queue_forbidden', $exception->getMessage(), ['status' => 403]);
+                } catch (\Fuzeo\Queue\Exceptions\InteropException $exception) {
+                    return new \WP_Error('fuzeo_queue_error', $exception->getMessage(), ['status' => 400]);
                 } catch (DriverException $exception) {
                     return new \WP_Error('fuzeo_queue_error', $exception->getMessage(), ['status' => 400]);
                 }
@@ -191,6 +260,8 @@ final class RestRegistrar
                     return rest_ensure_response($data);
                 } catch (AccessDenied $exception) {
                     return new \WP_Error('fuzeo_queue_forbidden', $exception->getMessage(), ['status' => 403]);
+                } catch (\Fuzeo\Queue\Exceptions\InteropException $exception) {
+                    return new \WP_Error('fuzeo_queue_error', $exception->getMessage(), ['status' => 400]);
                 } catch (UniqueConflictException $exception) {
                     return new \WP_Error('fuzeo_queue_conflict', $exception->getMessage(), ['status' => 409]);
                 } catch (DriverException $exception) {

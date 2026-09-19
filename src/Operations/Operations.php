@@ -770,9 +770,8 @@ final class Operations
         $config = $this->manager->config();
         $wp = new \Fuzeo\Queue\Runtime\NativeWordPressRuntime();
         $as = function_exists('as_schedule_single_action') || class_exists('ActionScheduler');
-        $cron = defined('DISABLE_WP_CRON') ? !DISABLE_WP_CRON : function_exists('wp_next_scheduled');
-
-        return [
+        $cronPresent = function_exists('_get_cron_array') || function_exists('wp_next_scheduled');
+        $base = [
             'package_version' => PackageInfo::VERSION,
             'compatibility_series' => PackageInfo::COMPATIBILITY_SERIES,
             'schema_version' => SchemaOwner::CURRENT_VERSION,
@@ -791,7 +790,8 @@ final class Operations
             'object_cache_dropin' => $wp->objectCacheDropInPresent(),
             'metrics_degraded' => $this->metrics->isDegraded(),
             'action_scheduler_detected' => $as,
-            'wp_cron_available' => $cron,
+            'wp_cron_available' => $cronPresent,
+            'wp_cron_automatic_spawning_disabled' => defined('DISABLE_WP_CRON') && DISABLE_WP_CRON,
             'retention' => [
                 'minute_hours' => $this->retention->minuteHours,
                 'hour_days' => $this->retention->hourDays,
@@ -800,6 +800,12 @@ final class Operations
             'default_queue' => $config->defaultQueue,
             'payloads_included' => false,
         ];
+
+        try {
+            return array_merge($base, $this->manager->interop()->diagnostics());
+        } catch (\Throwable) {
+            return $base;
+        }
     }
 
     public function prune(Operator $operator, int $batchSize = 500): int

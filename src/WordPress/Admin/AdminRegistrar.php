@@ -67,6 +67,8 @@ final class AdminRegistrar
         add_action('admin_post_fuzeo_queue_retry', [AdminPage::class, 'handleRetry']);
         add_action('admin_post_fuzeo_queue_restart', [AdminPage::class, 'handleRestart']);
         add_action('admin_post_fuzeo_queue_drain', [AdminPage::class, 'handleDrain']);
+        add_action('admin_post_fuzeo_queue_interop_migrate', [AdminPage::class, 'handleInteropMigrate']);
+        add_action('admin_post_fuzeo_queue_interop_rollback', [AdminPage::class, 'handleInteropRollback']);
     }
 
     public static function registrationCount(): int

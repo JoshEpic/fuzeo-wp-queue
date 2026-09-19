@@ -5,7 +5,7 @@ All project hooks use the `fuzeo_queue_` prefix.
 | Hook | When |
 | --- | --- |
 | `fuzeo_queue_config` | Filter config array (lowest precedence besides defaults) |
-| `fuzeo_queue_ready` | Runtime booted; register origins and jobs |
+| `fuzeo_queue_ready` | Runtime booted; register origins, jobs, and interop descriptors |
 | `fuzeo_queue_worker_started` | Worker process entering the loop |
 | `fuzeo_queue_job_preparing` | Site/context about to switch |
 | `fuzeo_queue_job_starting` | Handler about to run |

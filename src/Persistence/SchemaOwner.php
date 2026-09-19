@@ -16,7 +16,7 @@ final class SchemaOwner
     public const OPTION_LOCK = 'fuzeo_queue_schema_lock';
 
     /**
-     * Production schema version. 6 adds metrics and operational audit tables.
+     * Production schema version. 7 adds interoperability migration history.
      */
-    public const CURRENT_VERSION = 6;
+    public const CURRENT_VERSION = 7;
 }

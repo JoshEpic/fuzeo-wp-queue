@@ -1,6 +1,6 @@
 # Semantic versioning
 
-Fuzeo Queue 1.0 follows SemVer. Compatibility is stricter for persisted data than for PHP methods.
+Fuzeo Queue 1.x follows SemVer. 1.1 adds interoperability APIs without breaking 1.0 contracts.
 
 ## Breaking (major)
 

@@ -11,6 +11,8 @@
         "workers",
         "redis",
         "mysql",
+        "action-scheduler",
+        "wp-cron",
         "fuzeo"
     ],
     "homepage": "https://github.com/JoshEpic/fuzeo-wp-queue",

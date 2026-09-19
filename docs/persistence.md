@@ -1,20 +1,22 @@
-# Persistence compatibility (1.0)
+# Persistence compatibility (1.1)
 
-| Artifact | 1.0 version | 1.x rule |
+| Artifact | 1.1 version | Rule |
 | --- | --- | --- |
-| Envelope | 1 | Readable; additive optional fields only without a version bump |
-| Job payload schema | per `job::schemaVersion()` | Workers refuse unknown/unregistered types; payload meaning is the job author's contract |
-| Database schema | 6 | Forward migrations only; 1.0 did not add schema 7 |
-| Redis data model | prefix `fuzeo_queue:{namespace}:` | Key grammar is frozen; Cluster unsupported |
-| Lua scripts | 4 | Mismatch fails closed; no gratuitous bump in 1.0 |
+| Envelope | 1 | Unchanged from 1.0 |
+| Database schema | 7 | Forward only; 7 adds `fuzeo_queue_migrations` |
+| Redis data model / Lua | 4 | Unchanged; interop history is MySQL control plane |
+| Compatibility series | 1 | Compatible 1.x copies may share one runtime |
+
+**Supported:** 1.0.0 (schema 6) → 1.1.0 (schema 7) then worker recycle. Redis job keys are not rewritten.
+
 
 ## Readable history
 
-Envelope v1 is the only durable envelope. Schema versions 1–6 are reachable by sequential `up()` migrations (`IF NOT EXISTS` / recorded version). Direct jump from an empty database to 6 applies 1 through 6 in order.
+Envelope v1 is the only durable envelope. Schema versions 1–7 are sequential. Empty databases apply 1 through 7.
 
 ## Upgrade path
 
-**Supported:** 0.9.0 (schema 6) → 1.0.0 (schema 6, code-only) then worker recycle.
+**Supported:** 1.0.0 → 1.1.0 (schema 7) then worker recycle. Historical: 0.9.0 → 1.0.0 was schema 6 code-only.
 
 **Reasonable:** any 0.x that can reach schema 6 sequentially, then 1.0 code.
 

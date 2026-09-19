@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.1.0 - 2026-09-19
+
+WordPress interoperability: Action Scheduler and WP-Cron discovery, explicit migration descriptors, Queue-first / Action Scheduler fallback, and an Interoperability admin/CLI/REST surface.
+
+### Added
+
+- `Fuzeo\Queue\Interop` runtime adapter, descriptors, planner, executor, fake testing APIs
+- Schema 7 `fuzeo_queue_migrations` (WordPress MySQL control plane, including Redis-driver sites)
+- Admin Interoperability view; `wp fuzeo-queue interop …`; REST `/v1/interop/*`
+
+### Upgrade
+
+Deploy 1.1, `wp fuzeo-queue migrate --check` (MySQL schema 7), recycle workers. See [UPGRADING.md](UPGRADING.md). Interop APIs are additive 1.x.
+
 ## 1.0.0 - 2026-09-19
 
 Stable open-source release of Fuzeo Queue: durable queues, persistent workers, retries, scheduling, orchestration, and operations for WordPress plugin developers.

@@ -36,6 +36,7 @@ final class AdminPage
             'orchestration' => self::orchestration($operator),
             'metrics' => self::metrics($operator),
             'diagnostics' => self::diagnostics($operator),
+            'interop' => self::interop($operator),
             default => self::overview($operator),
         };
         echo '</div>';
@@ -53,6 +54,7 @@ final class AdminPage
             'orchestration' => 'Chains & Batches',
             'metrics' => 'Metrics',
             'diagnostics' => 'Diagnostics',
+            'interop' => 'Interoperability',
         ];
         echo '<nav class="fuzeo-queue-nav" aria-label="Fuzeo Queue">';
         echo '<ul class="subsubsub">';
@@ -315,6 +317,159 @@ final class AdminPage
             echo '<tr><th scope="row">' . esc_html((string) $key) . '</th><td>' . esc_html(is_bool($value) ? ($value ? 'true' : 'false') : (string) $value) . '</td></tr>';
         }
         echo '</tbody></table>';
+    }
+
+    private static function interop(Operator $operator): void
+    {
+        $access = new QueueAccess();
+        if (!$access->canViewSite($operator->currentSiteId) && !$access->canViewNetwork()) {
+            echo '<p>Not authorized.</p>';
+
+            return;
+        }
+        $canManage = $access->canManageSite($operator->currentSiteId) || $access->canManageNetwork();
+        $origin = new \Fuzeo\Queue\Jobs\Origin('fuzeowp/queue', \Fuzeo\Queue\Runtime\PackageInfo::VERSION);
+        $interop = Coordinator::get()->interop();
+        $status = $interop->status($origin, $operator->currentSiteId, 1);
+        echo '<section><h2>Runtime</h2>';
+        echo '<p>Preferred <code>' . esc_html((string) $status['preferred_runtime']) . '</code>. Active <code>'
+            . esc_html((string) $status['active_runtime']) . '</code>. Legacy pending (adapter-owned): '
+            . esc_html((string) $status['legacy_pending']) . '.</p>';
+        echo '<p>' . esc_html((string) $status['reason']) . '</p>';
+        if (!empty($status['fully_transitioned'])) {
+            echo '<p>Fully transitioned to Fuzeo Queue for this origin.</p>';
+        }
+        echo '</section>';
+        $as = is_array($status['action_scheduler'] ?? null) ? $status['action_scheduler'] : [];
+        echo '<section><h2>Action Scheduler</h2>';
+        if (empty($as['detected'])) {
+            echo '<p>Action Scheduler is not detected. Fuzeo Queue does not require it.</p>';
+        } else {
+            echo '<p>Version ' . esc_html((string) ($as['version'] ?? 'unknown'))
+                . '. Pending ' . esc_html((string) ($as['pending'] ?? 0))
+                . ', running ' . esc_html((string) ($as['running'] ?? 0))
+                . ', failed ' . esc_html((string) ($as['failed'] ?? 0)) . '.</p>';
+            echo '<p>Unknown hooks are visible, not broken. Only declared-compatible hooks can be migrated.</p>';
+        }
+        echo '<table class="widefat striped"><caption>Action Scheduler candidates</caption><thead><tr>';
+        echo '<th>Hook</th><th>Status</th><th>Compatibility</th><th>Action</th></tr></thead><tbody>';
+        $candidates = $interop->actionSchedulerCandidates($operator->currentSiteId, 1, 50, 0);
+        if ($candidates === []) {
+            echo '<tr><td colspan="4">No Action Scheduler actions in this page.</td></tr>';
+        }
+        foreach ($candidates as $row) {
+            echo '<tr><td><code>' . esc_html((string) $row['hook']) . '</code></td>';
+            echo '<td>' . esc_html((string) $row['status']) . '</td>';
+            echo '<td>' . esc_html((string) $row['compatibility']) . '</td><td>';
+            if ($canManage && !empty($row['migratable']) && !empty($row['recurring'])) {
+                self::migrateForm('action-scheduler', (string) $row['hook'], $operator->currentSiteId, false);
+            } elseif (!empty($row['migratable']) && empty($row['recurring'])) {
+                echo '<span class="description">Drain in place (advanced CLI: <code>--pending --execute</code>).</span>';
+            } elseif (($row['compatibility'] ?? '') === 'unknown') {
+                echo 'No migration descriptor registered.';
+            } else {
+                echo '—';
+            }
+            echo '</td></tr>';
+        }
+        echo '</tbody></table></section>';
+        echo '<section><h2>WP-Cron</h2>';
+        $cron = is_array($status['wp_cron'] ?? null) ? $status['wp_cron'] : [];
+        if (!empty($cron['automatic_spawning_disabled'])) {
+            echo '<p>DISABLE_WP_CRON is set. Events may still exist; automatic spawning is disabled.</p>';
+        }
+        echo '<table class="widefat striped"><caption>WP-Cron candidates</caption><thead><tr>';
+        echo '<th>Hook</th><th>Recurrence</th><th>Compatibility</th><th>Action</th></tr></thead><tbody>';
+        foreach ($interop->cronCandidates($operator->currentSiteId, 1) as $row) {
+            echo '<tr><td><code>' . esc_html((string) $row['hook']) . '</code></td>';
+            echo '<td>' . esc_html(is_string($row['recurrence'] ?? null) ? (string) $row['recurrence'] : 'single') . '</td>';
+            echo '<td>' . esc_html((string) $row['compatibility']) . '</td><td>';
+            if ($canManage && !empty($row['migratable'])) {
+                self::migrateForm('cron', (string) $row['hook'], $operator->currentSiteId, false);
+            } elseif (($row['compatibility'] ?? '') === 'unknown') {
+                echo 'No migration descriptor registered.';
+            } else {
+                echo '—';
+            }
+            echo '</td></tr>';
+        }
+        echo '</tbody></table></section>';
+        echo '<section><h2>Migration history</h2>';
+        echo '<table class="widefat striped"><caption>History</caption><thead><tr>';
+        echo '<th>Date</th><th>Source</th><th>Descriptor</th><th>Destination</th><th>Status</th><th>Site</th><th>Rollback</th></tr></thead><tbody>';
+        $history = $interop->history($operator->currentSiteId, 50, 0);
+        if ($history === []) {
+            echo '<tr><td colspan="7">No migrations recorded.</td></tr>';
+        }
+        foreach ($history as $row) {
+            echo '<tr><td>' . esc_html((string) ($row['migrated_at'] ?? '')) . '</td>';
+            echo '<td>' . esc_html((string) ($row['source_system'] ?? '')) . '</td>';
+            echo '<td><code>' . esc_html((string) ($row['descriptor_id'] ?? '')) . '</code></td>';
+            echo '<td><code>' . esc_html((string) ($row['destination_id'] ?? '')) . '</code></td>';
+            echo '<td>' . esc_html((string) ($row['status'] ?? '')) . '</td>';
+            echo '<td>' . esc_html((string) ($row['site_id'] ?? '')) . '</td><td>';
+            if (!empty($row['rollback_available'])) {
+                echo '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '">';
+                echo '<input type="hidden" name="action" value="fuzeo_queue_interop_rollback" />';
+                echo '<input type="hidden" name="migration_id" value="' . esc_attr((string) ($row['migration_id'] ?? '')) . '" />';
+                wp_nonce_field('fuzeo_queue_interop_rollback');
+                echo '<button class="button" type="submit">Rollback</button></form>';
+            } else {
+                echo 'no';
+            }
+            echo '</td></tr>';
+        }
+        echo '</tbody></table></section>';
+    }
+
+    private static function migrateForm(string $source, string $hook, int $siteId, bool $pending): void
+    {
+        echo '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '">';
+        echo '<input type="hidden" name="action" value="fuzeo_queue_interop_migrate" />';
+        echo '<input type="hidden" name="source" value="' . esc_attr($source) . '" />';
+        echo '<input type="hidden" name="hook" value="' . esc_attr($hook) . '" />';
+        echo '<input type="hidden" name="site_id" value="' . esc_attr((string) $siteId) . '" />';
+        if ($pending) {
+            echo '<input type="hidden" name="pending" value="1" />';
+        }
+        echo '<label><input type="checkbox" name="confirm" value="1" required /> Confirm</label> ';
+        wp_nonce_field('fuzeo_queue_interop_migrate');
+        echo '<button class="button button-primary" type="submit">Migrate</button></form>';
+    }
+
+    public static function handleInteropMigrate(): void
+    {
+        check_admin_referer('fuzeo_queue_interop_migrate');
+        $operator = self::operator();
+        $siteId = isset($_POST['site_id']) && is_numeric($_POST['site_id']) ? (int) $_POST['site_id'] : $operator->currentSiteId;
+        $operator->assertManage($siteId);
+        if (empty($_POST['confirm'])) {
+            wp_safe_redirect(wp_get_referer() ?: admin_url('admin.php?page=' . AdminRegistrar::MENU_SLUG . '&fq_view=interop'));
+            exit;
+        }
+        $hook = isset($_POST['hook']) && is_string($_POST['hook']) ? sanitize_key($_POST['hook']) : '';
+        $source = isset($_POST['source']) && is_string($_POST['source']) ? sanitize_key($_POST['source']) : 'cron';
+        $context = \Fuzeo\Queue\Jobs\ExecutionContext::site(1, $siteId);
+        $interop = Coordinator::get()->interop();
+        $plan = $source === 'action-scheduler'
+            ? $interop->planActionScheduler($hook, $context, null, !empty($_POST['pending']))
+            : $interop->planCron($hook, $context);
+        $interop->migrate($plan, true);
+        wp_safe_redirect(wp_get_referer() ?: admin_url('admin.php?page=' . AdminRegistrar::MENU_SLUG . '&fq_view=interop'));
+        exit;
+    }
+
+    public static function handleInteropRollback(): void
+    {
+        check_admin_referer('fuzeo_queue_interop_rollback');
+        $operator = self::operator();
+        $operator->assertManage($operator->currentSiteId);
+        $id = isset($_POST['migration_id']) && is_string($_POST['migration_id']) ? sanitize_text_field($_POST['migration_id']) : '';
+        if ($id !== '') {
+            Coordinator::get()->interop()->rollback($id);
+        }
+        wp_safe_redirect(wp_get_referer() ?: admin_url('admin.php?page=' . AdminRegistrar::MENU_SLUG . '&fq_view=interop'));
+        exit;
     }
 
     public static function handleRestart(): void

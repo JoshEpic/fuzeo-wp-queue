@@ -5,16 +5,16 @@ Real background job infrastructure for WordPress plugin developers.
 Durable queues, persistent workers, retries, scheduling, concurrency, observability, and more.
 
 ```bash
-composer require fuzeowp/queue:^1.0
+composer require fuzeowp/queue:^1.1
 ```
 
-Fuzeo Queue is a Composer library. It is not a WordPress plugin, not WP-Cron, and not Action Scheduler.
+Fuzeo Queue is a Composer library. It is not a WordPress plugin. It does not globally replace WP-Cron or Action Scheduler; 1.1 can interoperate with both through explicit adapters and descriptors.
 
 Delivery is **at-least-once**. A worker may crash after a side effect and before acknowledgement; another worker will run the job after the lease expires. Design handlers accordingly.
 
 ## Requirements
 
-| Surface | 1.0 support |
+| Surface | 1.1 support |
 | --- | --- |
 | PHP | 8.1, 8.2, 8.3, 8.4 |
 | WordPress | 6.2+ (optional until you boot a runtime) |
@@ -77,7 +77,7 @@ Queue::dispatch(new ProcessOrder(123));
 Queue::assertDispatched(ProcessOrder::class);
 ```
 
-## What 1.0 includes
+## What 1.1 includes
 
 - MySQL and Redis durable backends, plus an in-memory driver for tests
 - Persistent workers, reservation leases, token-gated ACK
@@ -87,11 +87,12 @@ Queue::assertDispatched(ProcessOrder::class);
 - Metrics, health, REST, admin dashboard, Site Health
 - Deployment generations, drain, restart, schema migrations
 - Multisite isolation and WooCommerce/HPOS-safe ID-over-object jobs
+- Action Scheduler / WP-Cron discovery, explicit migrations, Queue-first fallback runtime
 
-## What 1.0 is not
+## What 1.1 is not
 
 - Exactly-once delivery
-- A WP-Cron or Action Scheduler replacement or interceptor (planned as a later interoperability layer)
+- A silent WP-Cron or Action Scheduler replacement or interceptor
 - Redis Cluster
 - A workflow engine, webhook product, or hosting control plane
 - A commercial Fuzeo licensing component
@@ -109,7 +110,7 @@ Pick **one** production backend. Switching drivers does not migrate jobs.
 - [Quickstart](docs/quickstart.md)
 - [WordPress plugin guide](docs/plugin-guide.md)
 - [Job authoring](docs/job-authoring.md)
-- [Public API](docs/api.md)
+- [Interoperability](docs/interoperability.md)
 - [Bundling](docs/bundling.md)
 - [SemVer](docs/versioning.md)
 - [Persistence](docs/persistence.md)

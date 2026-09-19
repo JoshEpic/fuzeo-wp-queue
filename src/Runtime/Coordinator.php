@@ -33,6 +33,8 @@ use Fuzeo\Queue\Persistence\AttemptsMigration;
 use Fuzeo\Queue\Persistence\Phase5TablesMigration;
 use Fuzeo\Queue\Persistence\Phase6TablesMigration;
 use Fuzeo\Queue\Persistence\Phase8TablesMigration;
+use Fuzeo\Queue\Persistence\Phase11InteropMigration;
+use Fuzeo\Queue\Persistence\InteropSchema;
 use Fuzeo\Queue\Persistence\QueueTablesMigration;
 use Fuzeo\Queue\Persistence\WpdbConnection;
 use Fuzeo\Queue\Serialization\JsonPayloadSerializer;
@@ -55,6 +57,8 @@ final class Coordinator
     private static bool $integrationsRegistered = false;
 
     private static ?Connection $connection = null;
+
+    private static ?Connection $controlPlane = null;
 
     /**
      * @param array<string, mixed> $config
@@ -145,6 +149,7 @@ final class Coordinator
         self::$bootCount = 0;
         self::$integrationsRegistered = false;
         self::$connection = null;
+        self::$controlPlane = null;
         $GLOBALS['fuzeo_queue_kernel'] = [
             'candidates' => $GLOBALS['fuzeo_queue_kernel']['candidates'] ?? [],
             'booted' => false,
@@ -252,6 +257,11 @@ final class Coordinator
         $context ??= self::defaultContextResolver();
         $connection ??= self::detectConnection($config);
         self::$connection = $connection;
+        $controlPlane = $connection;
+        if ($controlPlane === null && $config->driver === Config::DRIVER_REDIS) {
+            $controlPlane = self::detectControlPlane();
+        }
+        self::$controlPlane = $controlPlane;
         $driver ??= self::makeDriver($config, $clock, $connection);
         $serializer = new JsonPayloadSerializer(new PayloadLimits(
             $config->maxPayloadBytes,
@@ -267,6 +277,7 @@ final class Coordinator
             contextResolver: $context,
             clock: $clock,
             migrations: self::makeMigrations($connection),
+            controlPlane: $controlPlane,
         );
     }
 
@@ -277,6 +288,19 @@ final class Coordinator
         }
         if (isset($GLOBALS['wpdb']) && is_object($GLOBALS['wpdb'])) {
             return WpdbConnection::fromGlobals();
+        }
+
+        return null;
+    }
+
+    private static function detectControlPlane(): ?Connection
+    {
+        if (isset($GLOBALS['wpdb']) && is_object($GLOBALS['wpdb'])) {
+            try {
+                return WpdbConnection::fromGlobals();
+            } catch (\Throwable) {
+                return null;
+            }
         }
 
         return null;
@@ -403,6 +427,7 @@ final class Coordinator
         CliRegistrar::register();
         AdminRegistrar::register();
         \Fuzeo\Queue\WordPress\Rest\RestRegistrar::register();
+        \Fuzeo\Queue\Interop\FallbackCallback::register();
     }
 
     /**
@@ -418,6 +443,7 @@ final class Coordinator
             $migrations[] = new Phase5TablesMigration($connection);
             $migrations[] = new Phase6TablesMigration($connection);
             $migrations[] = new Phase8TablesMigration($connection);
+            $migrations[] = new Phase11InteropMigration($connection);
         }
 
         return $migrations;
@@ -428,6 +454,12 @@ final class Coordinator
         $result = $manager->migrations()->run(self::packageMigrations(self::$connection));
         $current = (int) (self::kernel()['migrations_run'] ?? 0);
         self::kernelSet('migrations_run', $current + ($result->lockedOut ? 0 : 1));
+        if (self::$controlPlane !== null && self::$connection === null) {
+            try {
+                InteropSchema::ensure(self::$controlPlane);
+            } catch (\Throwable) {
+            }
+        }
     }
 
     /**

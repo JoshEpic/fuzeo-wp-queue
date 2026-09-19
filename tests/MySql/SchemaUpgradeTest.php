@@ -21,7 +21,7 @@ final class SchemaUpgradeTest extends MysqlTestCase
         parent::tearDown();
     }
 
-    public function testSequentialMigrationsFromSchemaTwoReachSix(): void
+    public function testSequentialMigrationsFromSchemaTwoReachCurrent(): void
     {
         $runner = new MigrationRunner(
             new DatabaseMigrationRepository($this->connection),
