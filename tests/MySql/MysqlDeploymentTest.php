@@ -52,7 +52,7 @@ final class MysqlDeploymentTest extends MysqlTestCase
         $meta = Schema::quoteTable($this->connection->prefix(), Schema::META);
         $this->connection->execute(
             'UPDATE ' . $meta . ' SET meta_value = ? WHERE meta_key = ?',
-            ['7', Schema::META_VERSION]
+            [(string) (SchemaOwner::CURRENT_VERSION + 1), Schema::META_VERSION]
         );
         $driver = Coordinator::get()->driver();
         self::assertInstanceOf(MySqlDriver::class, $driver);

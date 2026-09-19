@@ -42,7 +42,13 @@
     "autoload-dev": {
         "psr-4": {
             "Fuzeo\\Queue\\Tests\\": "tests/"
-        }
+        },
+        "exclude-from-classmap": [
+            "/tests/Support/RedisStubs.php",
+            "/tests/Support/WordPressStubs.php",
+            "/tests/Support/WpdbStub.php",
+            "/tests/Support/Phase7Jobs.php"
+        ]
     },
     "scripts": {
         "test": "phpunit",
