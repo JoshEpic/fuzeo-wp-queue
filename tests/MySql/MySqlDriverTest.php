@@ -11,6 +11,8 @@ use Fuzeo\Queue\Drivers\ReserveRequest;
 use Fuzeo\Queue\Jobs\JobState;
 use Fuzeo\Queue\Jobs\Origin;
 use Fuzeo\Queue\Persistence\DatabaseMigrationRepository;
+use Fuzeo\Queue\Persistence\PdoConnection;
+use Fuzeo\Queue\Persistence\Schema;
 use Fuzeo\Queue\Queue;
 use Fuzeo\Queue\Runtime\Coordinator;
 use Fuzeo\Queue\Support\FrozenClock;
@@ -100,11 +102,39 @@ final class MySqlDriverTest extends MysqlTestCase
         $driver->acknowledge($workerA);
     }
 
+    public function testSecondConnectionCanReserveWhileAnotherHoldsARow(): void
+    {
+        Coordinator::bootForTesting(['driver' => 'mysql'], connection: $this->connection);
+        Queue::register(ProcessOrderJob::class, new Origin('acme/shop', '1.0.0'), ProcessOrderHandler::class);
+        Queue::dispatch(new ProcessOrderJob(1));
+        Queue::dispatch(new ProcessOrderJob(2));
+
+        $jobs = Schema::quoteTable($this->connection->prefix(), Schema::JOBS);
+        $this->connection->begin();
+        $locked = $this->connection->selectOne(
+            'SELECT * FROM ' . $jobs . '
+             WHERE `queue` = ? AND `state` = ?
+             ORDER BY `priority` DESC, `available_at` ASC, `job_id` ASC
+             LIMIT 1
+             FOR UPDATE SKIP LOCKED',
+            ['default', JobState::Pending->value]
+        );
+        self::assertNotNull($locked);
+        self::assertIsString($locked['job_id'] ?? null);
+
+        $other = PdoConnection::fromDsn($this->dsn, $this->user, $this->password, 'wp_');
+        $driverB = new MySqlDriver($other);
+        $reserved = $driverB->reserve(new ReserveRequest('default', 'worker-b', 30));
+        self::assertNotNull($reserved);
+        self::assertNotSame($locked['job_id'], $reserved->envelope->jobId);
+        $this->connection->rollBack();
+    }
+
     public function testMigrationIsIdempotent(): void
     {
         Coordinator::bootForTesting(['driver' => 'mysql'], connection: $this->connection);
         Coordinator::bootForTesting(['driver' => 'mysql'], connection: $this->connection);
         $repo = new DatabaseMigrationRepository($this->connection);
-        self::assertSame(5, $repo->currentVersion());
+        self::assertSame(\Fuzeo\Queue\Persistence\SchemaOwner::CURRENT_VERSION, $repo->currentVersion());
     }
 }

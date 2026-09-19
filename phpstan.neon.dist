@@ -12,5 +12,7 @@ parameters:
         - tests/Support/RedisStubs.php
     excludePaths:
         - tests/Support/RedisStubs.php
+        - tests/Support/WordPressStubs.php
+        - tests/Support/WpdbStub.php
         - tests/WordPress
         - tests/bootstrap.php

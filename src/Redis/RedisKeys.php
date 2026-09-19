@@ -175,6 +175,18 @@ final class RedisKeys
         return $this->prefix . ':cancel:' . $jobId;
     }
 
+    public function metric(string $resolution, int $bucket, string $metric, string $dimensionType, string $dimensionValue): string
+    {
+        $dim = $dimensionType . '=' . $dimensionValue;
+
+        return $this->prefix . ':m:' . $resolution . ':' . $bucket . ':' . $metric . ':' . $dim;
+    }
+
+    public function audit(): string
+    {
+        return $this->prefix . ':audit';
+    }
+
     public function meta(): string
     {
         return $this->prefix . ':meta';

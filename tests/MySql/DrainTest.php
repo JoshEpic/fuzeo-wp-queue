@@ -32,20 +32,68 @@ final class DrainTest extends MysqlTestCase
         $php = PHP_BINARY;
         $script = dirname(__DIR__) . '/bin/work-jobs.php';
         $env = $this->childEnv();
-        $half = (string) (int) ceil($count / 2);
-        $one = proc_open([$php, $script, $half], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes1, dirname(__DIR__, 2), $env);
-        $two = proc_open([$php, $script, $half], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes2, dirname(__DIR__, 2), $env);
-        self::assertIsResource($one);
-        self::assertIsResource($two);
-        stream_get_contents($pipes1[1]);
-        stream_get_contents($pipes2[1]);
-        proc_close($one);
-        proc_close($two);
+        $maxJobs = (string) $count;
+        $one = $this->spawnWorker($php, $script, $maxJobs, $env);
+        $two = $this->spawnWorker($php, $script, $maxJobs, $env);
+        $output = $this->awaitWorkers([$one, $two], 30);
 
         $lines = is_file($path) ? file($path, FILE_IGNORE_NEW_LINES) : [];
         self::assertIsArray($lines);
-        self::assertCount($count, $lines);
+        self::assertCount($count, $lines, $output);
         @unlink($path);
+    }
+
+    /**
+     * @param array<string, string> $env
+     * @return array{proc: resource, pipes: array<int, resource>}
+     */
+    private function spawnWorker(string $php, string $script, string $maxJobs, array $env): array
+    {
+        $proc = proc_open(
+            [$php, $script, $maxJobs],
+            [1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+            $pipes,
+            dirname(__DIR__, 2),
+            $env
+        );
+        self::assertIsResource($proc);
+        stream_set_blocking($pipes[1], false);
+        stream_set_blocking($pipes[2], false);
+
+        return ['proc' => $proc, 'pipes' => $pipes];
+    }
+
+    /**
+     * @param list<array{proc: resource, pipes: array<int, resource>}> $workers
+     */
+    private function awaitWorkers(array $workers, int $timeoutSeconds): string
+    {
+        $deadline = microtime(true) + $timeoutSeconds;
+        $output = '';
+        foreach ($workers as $worker) {
+            while (true) {
+                $status = proc_get_status($worker['proc']);
+                $stdout = stream_get_contents($worker['pipes'][1]);
+                $stderr = stream_get_contents($worker['pipes'][2]);
+                if (is_string($stdout) && $stdout !== '') {
+                    $output .= $stdout;
+                }
+                if (is_string($stderr) && $stderr !== '') {
+                    $output .= $stderr;
+                }
+                if (is_array($status) && $status['running'] === false) {
+                    break;
+                }
+                if (microtime(true) >= $deadline) {
+                    proc_terminate($worker['proc']);
+                    self::fail('Drain workers did not finish: ' . $output);
+                }
+                usleep(20000);
+            }
+            proc_close($worker['proc']);
+        }
+
+        return $output;
     }
 
     /**
@@ -53,13 +101,18 @@ final class DrainTest extends MysqlTestCase
      */
     private function childEnv(): array
     {
-        return \Fuzeo\Queue\Tests\Support\ChildDatabase::withPassword(
-            [
-                'PATH' => (string) getenv('PATH'),
-                'FUZEO_QUEUE_TEST_DSN' => $this->dsn,
-                'FUZEO_QUEUE_TEST_DB_USER' => $this->user,
-            ],
-            $this->password
-        );
+        $env = $_ENV + $_SERVER;
+        $out = [];
+        foreach ($env as $key => $value) {
+            if (is_string($key) && is_string($value)) {
+                $out[$key] = $value;
+            }
+        }
+        $out['PATH'] = (string) getenv('PATH');
+        $out['FUZEO_QUEUE_TEST_DSN'] = $this->dsn;
+        $out['FUZEO_QUEUE_TEST_DB_USER'] = $this->user;
+        $out['FUZEO_QUEUE_DISABLE_ALARMS'] = '1';
+
+        return \Fuzeo\Queue\Tests\Support\ChildDatabase::withPassword($out, $this->password);
     }
 }

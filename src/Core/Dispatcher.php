@@ -24,6 +24,7 @@ final class Dispatcher
         private readonly Config $config,
         private readonly ?FakeQueue $fake = null,
         private readonly Clock $clock = new SystemClock(),
+        private readonly ?\Fuzeo\Queue\Metrics\MetricRecorder $metrics = null,
     ) {
     }
 
@@ -41,9 +42,7 @@ final class Dispatcher
 
         $envelope = $this->factory->make($job, $options);
         $enqueued = $this->driver->enqueue($envelope);
-        if ($enqueued->accepted) {
-            $this->fake?->record($enqueued->envelope);
-        }
+        $this->afterEnqueue($enqueued);
 
         return new DispatchResult($enqueued->accepted, $enqueued->envelope, $enqueued->duplicateOf);
     }
@@ -58,9 +57,7 @@ final class Dispatcher
         }
         $envelope = $this->factory->makeRegistered($jobType, $payload, $options);
         $enqueued = $this->driver->enqueue($envelope);
-        if ($enqueued->accepted) {
-            $this->fake?->record($enqueued->envelope);
-        }
+        $this->afterEnqueue($enqueued);
 
         return new DispatchResult($enqueued->accepted, $enqueued->envelope, $enqueued->duplicateOf);
     }
@@ -80,5 +77,18 @@ final class Dispatcher
         unset($job);
 
         return new PendingDispatch($this, new DispatchOptions(queue: QueueName::DEFAULT));
+    }
+
+    private function afterEnqueue(\Fuzeo\Queue\Drivers\EnqueuedJob $enqueued): void
+    {
+        if (!$enqueued->accepted) {
+            return;
+        }
+        $this->fake?->record($enqueued->envelope);
+        $this->metrics?->increment(
+            \Fuzeo\Queue\Metrics\MetricName::JOBS_DISPATCHED,
+            1,
+            \Fuzeo\Queue\Metrics\MetricDimensions::fromEnvelope($enqueued->envelope, $this->config->driver)
+        );
     }
 }

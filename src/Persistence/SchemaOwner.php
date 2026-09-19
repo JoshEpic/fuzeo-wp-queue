@@ -14,7 +14,7 @@ final class SchemaOwner
     public const OPTION_LOCK = 'fuzeo_queue_schema_lock';
 
     /**
-     * Production schema version. 5 adds chains, batches, and job cancellation.
+     * Production schema version. 6 adds metrics and operational audit tables.
      */
-    public const CURRENT_VERSION = 5;
+    public const CURRENT_VERSION = 6;
 }

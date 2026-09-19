@@ -19,7 +19,10 @@ use Fuzeo\Queue\Drivers\ProvidesWorkerStore;
 use Fuzeo\Queue\Drivers\QueueDriver;
 use Fuzeo\Queue\Drivers\CancelsJobs;
 use Fuzeo\Queue\Drivers\CancelResult;
+use Fuzeo\Queue\Drivers\ProvidesJobCatalog;
 use Fuzeo\Queue\Drivers\ProvidesOrchestration;
+use Fuzeo\Queue\Inspection\JobCatalog;
+use Fuzeo\Queue\Inspection\MysqlJobCatalog;
 use Fuzeo\Queue\Drivers\Reconnectable;
 use Fuzeo\Queue\Drivers\ReliableAcknowledger;
 use Fuzeo\Queue\Drivers\StatusAware;
@@ -57,9 +60,9 @@ use Fuzeo\Queue\Worker\WorkerRepository;
 use Fuzeo\Queue\Worker\WorkerStore;
 
 /**
- * Durable InnoDB driver. Reservation uses SELECT ... FOR UPDATE SKIP LOCKED.
+ * Durable InnoDB driver. Reservation uses READ COMMITTED + SELECT ... FOR UPDATE SKIP LOCKED.
  */
-final class MySqlDriver implements QueueDriver, FailureStore, ReliableAcknowledger, Reconnectable, StatusAware, ProvidesWorkerStore, ProvidesUniqueStore, ProvidesIdempotencyStore, ProvidesScheduleStore, ProvidesOrchestration, CancelsJobs
+final class MySqlDriver implements QueueDriver, FailureStore, ReliableAcknowledger, Reconnectable, StatusAware, ProvidesWorkerStore, ProvidesUniqueStore, ProvidesIdempotencyStore, ProvidesScheduleStore, ProvidesOrchestration, ProvidesJobCatalog, CancelsJobs
 {
     /** @var array<string, string> */
     private array $concurrencyLocks = [];
@@ -109,6 +112,11 @@ final class MySqlDriver implements QueueDriver, FailureStore, ReliableAcknowledg
     public function workerStore(): WorkerStore
     {
         return new WorkerRepository($this->connection, $this->clock);
+    }
+
+    public function catalog(): JobCatalog
+    {
+        return new MysqlJobCatalog($this->connection, $this->clock);
     }
 
     public function connection(): Connection
@@ -686,6 +694,7 @@ final class MySqlDriver implements QueueDriver, FailureStore, ReliableAcknowledg
             priorities: true,
             atomicUniqueness: true,
             delayedJobs: true,
+            advancedMetrics: true,
             durable: true,
             atomicRateLimits: true,
             queueConcurrency: true,

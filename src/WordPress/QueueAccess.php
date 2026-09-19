@@ -48,6 +48,25 @@ final class QueueAccess
         return $this->canViewSite($siteId);
     }
 
+    public function canCancelSite(int $siteId): bool
+    {
+        return $this->canManageSite($siteId);
+    }
+
+    public function canViewPayload(int $siteId): bool
+    {
+        if ($this->userCan(Capabilities::VIEW_PAYLOAD) || $this->canManageNetwork()) {
+            return $this->canViewSite($siteId) || $this->canViewNetwork();
+        }
+
+        return $this->canManageSite($siteId);
+    }
+
+    public function canViewTrace(int $siteId): bool
+    {
+        return $this->canManageSite($siteId) || $this->canManageNetwork();
+    }
+
     public function canViewNetwork(): bool
     {
         return $this->userCan(Capabilities::NETWORK_VIEW)

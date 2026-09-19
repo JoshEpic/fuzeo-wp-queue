@@ -14,7 +14,9 @@ Reasons:
 WP_CLI::add_command('fuzeo-queue', QueueCommand::class);
 ```
 
-Subcommands: `work`, `schedule-work`, `schedule-run`, `schedules`, `unique`, `idempotency`, `status`, `workers`, `queues`, `failed`, `prune`, `chains`, `batches`, `cancel`, `reconcile`.
+Subcommands: `work`, `schedule-work`, `schedule-run`, `schedules`, `unique`, `idempotency`, `status`, `workers`, `queues`, `jobs`, `failed`, `prune`, `chains`, `batches`, `cancel`, `reconcile`, `health`, `metrics`.
+
+`jobs` lists or shows jobs (`jobs show <id> --payload`). `health` and `metrics` read the operations layer (`--format=json` supported). `prune` also deletes aged metrics/audit rows.
 
 `failed` lists dead/failed jobs without payloads. `failed show <id>` prints sanitized metadata and traces. `failed show <id> --payload` includes a redacted payload. `failed retry <id>` revives a dead job (same id, new attempt cycle) and refuses uniqueness conflicts. See [retries](retries.md), [schedules](schedules.md), and [unique-jobs](unique-jobs.md).
 
@@ -26,7 +28,7 @@ Subcommands: `work`, `schedule-work`, `schedule-run`, `schedules`, `unique`, `id
 
 One menu slug: `fuzeo-queue`.
 
-- Single site: `fuzeo_queue_manage` or `manage_options`
-- Network admin: `fuzeo_queue_manage_network` or `manage_network_options`
+- Single site: `fuzeo_queue_view` / `fuzeo_queue_manage` or `manage_options`
+- Network admin: `fuzeo_queue_view_network` / `fuzeo_queue_manage_network` or `manage_network_options`
 
-Phase 7 registers Site Health diagnostics. No operations dashboard is rendered.
+Pages: Overview, Queues, Jobs, Failed, Workers, Schedules, Chains & Batches, Metrics, Diagnostics. REST namespace `fuzeo-queue/v1`. Payloads are redacted and hidden by default. Retry warns about at-least-once delivery. Running jobs can request cancel; they cannot be killed.

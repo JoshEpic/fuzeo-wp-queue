@@ -14,5 +14,8 @@
 | Untrusted metadata | Same JSON serializer rules as payload. |
 | Malformed queue names | `QueueName` allow-list pattern. |
 | Payload leakage in logs | `EnvelopeRedactor` omits payload by default. |
+| REST/admin payload leak | Server-side `QueueAccess`; `SecretRedactor`; payload opt-in. |
+| Cross-site job inspect | `Operator` site filter; 403 on other-site IDs. |
+| Arbitrary REST sort/SQL | Whitelisted filters only. |
 
 Make jobs idempotent. At-least-once delivery means handlers may observe duplicates.

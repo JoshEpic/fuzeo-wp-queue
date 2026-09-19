@@ -18,8 +18,11 @@ use Fuzeo\Queue\Drivers\ProvidesUniqueStore;
 use Fuzeo\Queue\Drivers\QueueDriver;
 use Fuzeo\Queue\Drivers\CancelsJobs;
 use Fuzeo\Queue\Drivers\CancelResult;
+use Fuzeo\Queue\Drivers\ProvidesJobCatalog;
 use Fuzeo\Queue\Drivers\ProvidesOrchestration;
 use Fuzeo\Queue\Drivers\StatusAware;
+use Fuzeo\Queue\Inspection\JobCatalog;
+use Fuzeo\Queue\Inspection\MemoryJobCatalog;
 use Fuzeo\Queue\Drivers\ReleaseOptions;
 use Fuzeo\Queue\Drivers\Reservation;
 use Fuzeo\Queue\Drivers\ReservationToken;
@@ -47,7 +50,7 @@ use Fuzeo\Queue\Support\SystemClock;
 /**
  * In-process driver for tests and local experiments. Not durable across requests.
  */
-final class MemoryDriver implements QueueDriver, FailureStore, StatusAware, ProvidesUniqueStore, ProvidesIdempotencyStore, ProvidesScheduleStore, ProvidesOrchestration, CancelsJobs
+final class MemoryDriver implements QueueDriver, FailureStore, StatusAware, ProvidesUniqueStore, ProvidesIdempotencyStore, ProvidesScheduleStore, ProvidesOrchestration, ProvidesJobCatalog, CancelsJobs
 {
     /** @var array<string, Envelope> */
     private array $jobs = [];
@@ -100,6 +103,16 @@ final class MemoryDriver implements QueueDriver, FailureStore, StatusAware, Prov
     public function orchestration(): OrchestrationStore
     {
         return $this->orchestration;
+    }
+
+    public function catalog(): JobCatalog
+    {
+        return new MemoryJobCatalog($this, $this->clock);
+    }
+
+    public function reservation(string $jobId): ?Reservation
+    {
+        return $this->reservations[$jobId] ?? null;
     }
 
     public function enqueue(Envelope $envelope): EnqueuedJob

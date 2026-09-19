@@ -12,6 +12,7 @@ final class Capabilities
     public const VIEW = 'fuzeo_queue_view';
     public const MANAGE = 'fuzeo_queue_manage';
     public const RETRY = 'fuzeo_queue_retry';
+    public const VIEW_PAYLOAD = 'fuzeo_queue_view_payload';
     public const NETWORK_VIEW = 'fuzeo_queue_view_network';
     public const NETWORK_MANAGE = 'fuzeo_queue_manage_network';
 

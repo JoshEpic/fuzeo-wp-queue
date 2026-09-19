@@ -348,6 +348,114 @@ final class QueueCommand
     }
 
     /**
+     * Queue health summary.
+     *
+     * @param array<int, string> $args
+     * @param array<string, string> $assoc
+     */
+    public function health(array $args, array $assoc): void
+    {
+        unset($args);
+        $ops = Coordinator::get()->operations();
+        $json = isset($assoc['format']) && $assoc['format'] === 'json';
+        $report = $ops->queueHealth(\Fuzeo\Queue\Operations\Operator::cli());
+        $payload = $report->toArray();
+        $payload['scheduler'] = $ops->schedulerHealth(\Fuzeo\Queue\Operations\Operator::cli())->toArray();
+        $payload['metrics_degraded'] = Coordinator::get()->metrics()->isDegraded();
+        if ($json) {
+            $encoded = json_encode($payload, JSON_UNESCAPED_SLASHES);
+            $this->line(is_string($encoded) ? $encoded : '{}');
+            return;
+        }
+        $this->line('status=' . $payload['status']);
+        foreach ($payload['reasons'] as $reason) {
+            $this->line('reason=' . $reason);
+        }
+    }
+
+    /**
+     * Historical metrics.
+     *
+     * @param array<int, string> $args
+     * @param array<string, string> $assoc
+     */
+    public function metrics(array $args, array $assoc): void
+    {
+        unset($args);
+        $ops = Coordinator::get()->operations();
+        $period = $assoc['period'] ?? '1h';
+        $queue = $assoc['queue'] ?? null;
+        $data = $ops->metrics(\Fuzeo\Queue\Operations\Operator::cli(), $period, $queue);
+        if (isset($assoc['format']) && $assoc['format'] === 'json') {
+            $encoded = json_encode($data, JSON_UNESCAPED_SLASHES);
+            $this->line(is_string($encoded) ? $encoded : '{}');
+            return;
+        }
+        $this->printLines([
+            'period' => (string) $data['period'],
+            'resolution' => (string) $data['resolution'],
+            'degraded' => !empty($data['degraded']) ? 'yes' : 'no',
+            'runtime_p95' => (string) ((is_array($data['runtime'] ?? null) ? $data['runtime']['p95'] : 0) ?? 0),
+            'wait_p95' => (string) ((is_array($data['wait'] ?? null) ? $data['wait']['p95'] : 0) ?? 0),
+        ]);
+    }
+
+    /**
+     * List or show jobs.
+     *
+     * @param array<int, string> $args
+     * @param array<string, string> $assoc
+     */
+    public function jobs(array $args, array $assoc): void
+    {
+        $ops = Coordinator::get()->operations();
+        $operator = \Fuzeo\Queue\Operations\Operator::cli();
+        $action = $args[0] ?? 'list';
+        if ($action === 'show') {
+            $id = $args[1] ?? '';
+            $detail = $ops->job($operator, $id, isset($assoc['payload']));
+            if (isset($assoc['format']) && $assoc['format'] === 'json') {
+                $encoded = json_encode($detail, JSON_UNESCAPED_SLASHES);
+                $this->line(is_string($encoded) ? $encoded : '{}');
+                return;
+            }
+            $summary = is_array($detail['summary'] ?? null) ? $detail['summary'] : [];
+            foreach ($summary as $key => $value) {
+                if (!is_scalar($value) && $value !== null) {
+                    continue;
+                }
+                $this->line($key . ': ' . (string) $value);
+            }
+            return;
+        }
+        $state = isset($assoc['state']) ? \Fuzeo\Queue\Jobs\JobState::tryFrom($assoc['state']) : null;
+        $page = $ops->jobs($operator, new \Fuzeo\Queue\Inspection\JobQuery(
+            state: $state,
+            queue: $assoc['queue'] ?? null,
+            jobType: $assoc['type'] ?? null,
+            origin: $assoc['origin'] ?? null,
+            jobId: $assoc['id'] ?? null,
+            limit: isset($assoc['limit']) ? (int) $assoc['limit'] : 25,
+        ));
+        if (isset($assoc['format']) && $assoc['format'] === 'json') {
+            $encoded = json_encode(array_map(static fn ($e) => \Fuzeo\Queue\Jobs\EnvelopeRedactor::summarize($e), $page->items));
+            $this->line(is_string($encoded) ? $encoded : '[]');
+            return;
+        }
+        foreach ($page->items as $envelope) {
+            $this->line(sprintf(
+                '%s type=%s state=%s queue=%s origin=%s site=%s',
+                $envelope->jobId,
+                $envelope->jobType,
+                $envelope->state->value,
+                $envelope->queue,
+                $envelope->origin->package,
+                (string) $envelope->context->siteId
+            ));
+        }
+    }
+
+    /**
      * Prune completed and dead history in bounded batches.
      *
      * ## OPTIONS
@@ -383,6 +491,7 @@ final class QueueCommand
             . ' dead=' . $result->deadDeleted
             . ' attempts=' . $result->attemptsDeleted
             . ' orchestration=' . $orch
+            . ' metrics_audit=' . Coordinator::get()->operations()->prune(\Fuzeo\Queue\Operations\Operator::cli(), $batch)
         );
     }
 

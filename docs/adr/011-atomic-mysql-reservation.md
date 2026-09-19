@@ -6,9 +6,11 @@ Two workers must not share an active reservation. Ancient MySQL lacks `SKIP LOCK
 
 ## Decision
 
-Require MySQL 8.0.1+ or MariaDB 10.6+. Reserve inside a transaction:
+Require MySQL 8.0.1+ or MariaDB 10.6+. Reserve inside a transaction whose isolation level is **READ COMMITTED**:
 
-`SELECT ... FOR UPDATE SKIP LOCKED` then `UPDATE` token, lease, worker, state=reserved.
+`SET TRANSACTION ISOLATION LEVEL READ COMMITTED` then `SELECT ... FOR UPDATE SKIP LOCKED` then `UPDATE` token, lease, worker, state=reserved.
+
+Default REPEATABLE READ next-key/gap locks can cover every pending row for the queue even with `LIMIT 1`. A second worker then sees no unlocked candidate, returns null, and (with `--sleep=0`) exits while jobs remain. READ COMMITTED locks only the chosen row, which is what SKIP LOCKED needs for concurrent workers.
 
 Expired reserved rows are eligible in the same SELECT (`lease_expires_at <= now`). No separate sweeper is required.
 

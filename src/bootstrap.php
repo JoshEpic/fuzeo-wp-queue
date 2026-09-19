@@ -17,6 +17,7 @@ $GLOBALS['fuzeo_queue_kernel'] ??= [
     'hooks_registered' => 0,
     'cli_registered' => 0,
     'admin_registered' => 0,
+    'rest_registered' => 0,
     'migrations_run' => 0,
     'incompatible' => [],
     'diagnostics' => [],
@@ -24,7 +25,7 @@ $GLOBALS['fuzeo_queue_kernel'] ??= [
 ];
 
 $GLOBALS['fuzeo_queue_kernel']['candidates'][] = [
-    'version' => '0.7.0',
+    'version' => '0.8.0',
     'compatibility_series' => 1,
     'path' => dirname(__DIR__),
     'source' => __FILE__,

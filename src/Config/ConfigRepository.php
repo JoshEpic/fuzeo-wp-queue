@@ -110,6 +110,15 @@ final class ConfigRepository
             'FUZEO_QUEUE_RUNTIME_RESET' => 'runtime_reset',
             'FUZEO_QUEUE_WORKER_RECYCLE_ON_CONTEXT_ERROR' => 'worker_recycle_on_context_error',
             'FUZEO_QUEUE_SITE_HEALTH_BACKLOG_CRITICAL' => 'site_health_backlog_critical',
+            'FUZEO_QUEUE_METRICS_ENABLED' => 'metrics_enabled',
+            'FUZEO_QUEUE_METRICS_MINUTE_HOURS' => 'metrics_minute_hours',
+            'FUZEO_QUEUE_METRICS_HOUR_DAYS' => 'metrics_hour_days',
+            'FUZEO_QUEUE_METRICS_DAY_DAYS' => 'metrics_day_days',
+            'FUZEO_QUEUE_METRICS_INCLUDE_SITE' => 'metrics_include_site',
+            'FUZEO_QUEUE_HEALTH_LAG_DEGRADED_SECONDS' => 'health_lag_degraded_seconds',
+            'FUZEO_QUEUE_HEALTH_LAG_CRITICAL_SECONDS' => 'health_lag_critical_seconds',
+            'FUZEO_QUEUE_HEALTH_DEAD_DEGRADED' => 'health_dead_degraded',
+            'FUZEO_QUEUE_HEALTH_DEAD_CRITICAL' => 'health_dead_critical',
         ];
 
         $values = [];

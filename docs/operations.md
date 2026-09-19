@@ -19,10 +19,12 @@ Suggested starting point: `--max-jobs=500 --max-runtime=3600 --memory=128M`.
 
 A SHA-256 of loaded Queue version, schema version, active plugins, network plugins, and theme. Workers compare periodically and exit so a new process loads new PHP. The current job finishes on the old code. This is not a full deployment orchestrator (Phase 9).
 
-## Site Health
+## Site Health and dashboard
 
-WordPress Site Health reports driver availability, schema, workers vs backlog, Redis eviction policy, and debug fields (versions, generation, worker counts). Credentials and Redis DSNs are not included.
+WordPress Site Health reports driver availability, schema, workers vs backlog, Redis eviction policy, and debug fields (versions, generation, worker counts). The Fuzeo Queue admin overview uses the same no-worker and lag signals via `Operations::queueHealth`. Credentials and Redis DSNs are not included.
+
+Queue wait is `reservation time − available_at`. Handler runtime is measured separately. See [ADR-077](adr/077-queue-wait-runtime-definitions.md).
 
 ## Capabilities
 
-`fuzeo_queue_view`, `fuzeo_queue_manage`, `fuzeo_queue_retry`, `fuzeo_queue_view_network`, `fuzeo_queue_manage_network`, with fallbacks `manage_options` / `manage_network_options`. Site admins must not inspect network-wide queue state. CLI is operator access and does not use HTTP capabilities; still pass `--url` when targeting a site.
+`fuzeo_queue_view`, `fuzeo_queue_manage`, `fuzeo_queue_retry`, `fuzeo_queue_view_payload`, `fuzeo_queue_view_network`, `fuzeo_queue_manage_network`, with fallbacks `manage_options` / `manage_network_options`. Site admins must not inspect network-wide queue state. CLI is operator access and does not use HTTP capabilities; still pass `--url` when targeting a site.

@@ -68,6 +68,7 @@ final class PdoConnection implements Connection
     public function begin(): void
     {
         if (!$this->pdo->inTransaction()) {
+            $this->pdo->exec('SET TRANSACTION ISOLATION LEVEL READ COMMITTED');
             $this->pdo->beginTransaction();
         }
     }

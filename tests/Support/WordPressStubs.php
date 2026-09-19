@@ -178,6 +178,157 @@ if (!function_exists('add_action')) {
 
         return is_array($caps) && in_array($capability, $caps, true);
     }
+
+    function add_menu_page(string $pageTitle, string $menuTitle, string $capability, string $menuSlug, callable|string|array $callback = '', string $icon = '', int|float|null $position = null): string
+    {
+        unset($pageTitle, $menuTitle, $capability, $callback, $icon, $position);
+
+        return $menuSlug;
+    }
+
+    function add_filter(string $hook, callable $callback, int $priority = 10, int $accepted_args = 1): bool
+    {
+        unset($hook, $callback, $priority, $accepted_args);
+
+        return true;
+    }
+
+    function register_rest_route(string $namespace, string $route, array $args = [], bool $override = false): bool
+    {
+        unset($namespace, $route, $args, $override);
+
+        return true;
+    }
+
+    function rest_ensure_response(mixed $data): mixed
+    {
+        return $data;
+    }
+
+    function rest_url(string $path = '', string $scheme = 'rest'): string
+    {
+        unset($scheme);
+
+        return '/wp-json/' . ltrim($path, '/');
+    }
+
+    function sanitize_key(string $key): string
+    {
+        return strtolower(preg_replace('/[^a-z0-9_\-]/', '', $key) ?? $key);
+    }
+
+    function sanitize_text_field(string $str): string
+    {
+        return trim($str);
+    }
+
+    function esc_html(string $text): string
+    {
+        return htmlspecialchars($text, ENT_QUOTES, 'UTF-8');
+    }
+
+    function esc_attr(string $text): string
+    {
+        return htmlspecialchars($text, ENT_QUOTES, 'UTF-8');
+    }
+
+    function esc_url(string $url): string
+    {
+        return $url;
+    }
+
+    function wp_create_nonce(string $action): string
+    {
+        return 'nonce-' . $action;
+    }
+
+    function wp_nonce_field(string $action, string $name = '_wpnonce', bool $referer = true, bool $echo = true): string
+    {
+        unset($referer);
+        $html = '<input type="hidden" name="' . $name . '" value="' . wp_create_nonce($action) . '" />';
+        if ($echo) {
+            echo $html;
+        }
+
+        return $html;
+    }
+
+    function check_admin_referer(string $action = '-1', string $queryArg = '_wpnonce'): bool
+    {
+        unset($action, $queryArg);
+
+        return true;
+    }
+
+    function wp_safe_redirect(string $location, int $status = 302): void
+    {
+        unset($location, $status);
+    }
+
+    function wp_get_referer(): string|false
+    {
+        return false;
+    }
+
+    function admin_url(string $path = '', string $scheme = 'admin'): string
+    {
+        unset($scheme);
+
+        return '/wp-admin/' . ltrim($path, '/');
+    }
+
+    function add_query_arg(mixed $key, mixed $value = false, mixed $url = false): string
+    {
+        unset($key, $value);
+
+        return is_string($url) ? $url : '/wp-admin/admin.php';
+    }
+
+    function wp_enqueue_style(string $handle, string $src = '', array $deps = [], string|bool|null $ver = false, string $media = 'all'): void
+    {
+        unset($handle, $src, $deps, $ver, $media);
+    }
+
+    function wp_enqueue_script(string $handle, string $src = '', array $deps = [], string|bool|null $ver = false, bool $inFooter = false): void
+    {
+        unset($handle, $src, $deps, $ver, $inFooter);
+    }
+
+    function plugins_url(string $path = '', string $plugin = ''): string
+    {
+        unset($plugin);
+
+        return '/assets/' . ltrim($path, '/');
+    }
+
+    function content_url(string $path = ''): string
+    {
+        return '/wp-content/' . ltrim($path, '/');
+    }
+
+    function is_network_admin(): bool
+    {
+        return (bool) ($GLOBALS['fuzeo_wp_network_admin'] ?? false);
+    }
+
+    function get_site(int $siteId): mixed
+    {
+        $deleted = $GLOBALS['fuzeo_wp_deleted_sites'] ?? [];
+        if (is_array($deleted) && in_array($siteId, $deleted, true)) {
+            return null;
+        }
+
+        return $siteId > 0 ? (object) ['blog_id' => $siteId] : null;
+    }
+}
+
+if (!class_exists('WP_Error')) {
+    class WP_Error
+    {
+        public function __construct(public string $code = '', public string $message = '', public mixed $data = null)
+        {
+        }
+    }
 }
 
 if (!class_exists('WP_CLI')) {

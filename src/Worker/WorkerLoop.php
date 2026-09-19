@@ -79,6 +79,8 @@ final class WorkerLoop
         ?ProcessLifecycle $lifecycle = null,
         private readonly RuntimeLogger $logger = new NullLogger(),
         private readonly ?HandlerAvailability $availability = null,
+        private readonly ?\Fuzeo\Queue\Metrics\MetricRecorder $metrics = null,
+        private readonly ?\Fuzeo\Queue\Operations\Operations $operations = null,
     ) {
         $this->startedAt = $this->clock->now();
         $this->lifecycle = $lifecycle ?? new ProcessLifecycle(
@@ -146,6 +148,8 @@ final class WorkerLoop
             lifecycle: $lifecycle,
             logger: $logger,
             availability: new HandlerAvailability($manager->jobs(), $wp),
+            metrics: $manager->metrics(),
+            operations: $manager->operations(),
         );
     }
 
@@ -177,6 +181,7 @@ final class WorkerLoop
         $this->workers?->register($this->identity, $this->options->queues);
         $this->installFatalGuard();
         Hooks::emit(Hooks::WORKER_STARTED, $this->identity);
+        $this->operations?->recordEvent('worker.started', 'worker', $this->identity->workerId);
         $this->status = WorkerStatus::Idle;
 
         $cycle = 0;
@@ -258,6 +263,8 @@ final class WorkerLoop
         $this->resetter?->prepare();
         Hooks::emit(Hooks::JOB_PREPARING, $envelope, $this->identity);
         Hooks::emit(Hooks::BEFORE_JOB, $envelope, $this->identity);
+        $waitMs = \Fuzeo\Queue\Metrics\Timing::waitMs($reservation->reservedAt, $envelope->availableAt);
+        $started = hrtime(true);
         try {
             $this->timeouts->arm($this->jobTimeout($envelope), [$this->timeouts, 'throwTimeout']);
             Hooks::emit(Hooks::JOB_STARTING, $envelope, $this->identity);
@@ -266,6 +273,7 @@ final class WorkerLoop
                 $this->executor->execute($envelope);
             });
             $this->timeouts->disarm();
+            $runtimeMs = (hrtime(true) - $started) / 1e6;
             if ($this->cancellation?->isCancellationRequested($envelope->jobId)) {
                 $this->settleCancelled($reservation);
                 $this->cleanupAfterJob();
@@ -274,6 +282,7 @@ final class WorkerLoop
                 return;
             }
             $this->ack($reservation);
+            $this->recordSuccess($reservation, $waitMs, $runtimeMs);
             $this->orchestrator?->onCompleted($envelope->withState(\Fuzeo\Queue\Jobs\JobState::Completed));
             Hooks::emit(Hooks::JOB_COMPLETED, $envelope, $this->identity);
             Hooks::emit(Hooks::AFTER_JOB, $envelope, $this->identity);
@@ -349,6 +358,7 @@ final class WorkerLoop
         if ($this->driver instanceof FailureStore) {
             try {
                 $this->driver->settleOutcome($reservation, $record, $decision->nextState, $decision->availableAt);
+                $this->recordFailureMetrics($reservation, $decision);
                 if ($decision->nextState === \Fuzeo\Queue\Jobs\JobState::Dead) {
                     $this->orchestrator?->onDead($reservation->envelope->withState(\Fuzeo\Queue\Jobs\JobState::Dead));
                 }
@@ -381,6 +391,40 @@ final class WorkerLoop
         } catch (\Throwable) {
         }
         Hooks::emit(Hooks::JOB_CANCELLED, $reservation->envelope, $this->identity);
+        $dims = \Fuzeo\Queue\Metrics\MetricDimensions::fromEnvelope($reservation->envelope, '', 'cancelled');
+        $this->metrics?->increment(\Fuzeo\Queue\Metrics\MetricName::JOBS_CANCELLED, 1, $dims);
+    }
+
+    private function recordSuccess(Reservation $reservation, float $waitMs, float $runtimeMs): void
+    {
+        $envelope = $reservation->envelope;
+        $dims = \Fuzeo\Queue\Metrics\MetricDimensions::fromEnvelope($envelope, '', 'completed');
+        $this->metrics?->increment(\Fuzeo\Queue\Metrics\MetricName::JOBS_COMPLETED, 1, $dims);
+        $this->metrics?->observe(\Fuzeo\Queue\Metrics\MetricName::WAIT_MS, $waitMs, $dims);
+        $this->metrics?->observe(\Fuzeo\Queue\Metrics\MetricName::RUNTIME_MS, $runtimeMs, $dims);
+        $successMs = max(0.0, ($this->clock->now()->getTimestamp() - $envelope->createdAt->getTimestamp()) * 1000.0);
+        $this->metrics?->observe(\Fuzeo\Queue\Metrics\MetricName::SUCCESS_MS, $successMs, $dims);
+        if ($envelope->attempt > 1) {
+            $this->metrics?->increment(\Fuzeo\Queue\Metrics\MetricName::RETRY_SUCCESS, 1, $dims);
+        }
+    }
+
+    private function recordFailureMetrics(Reservation $reservation, \Fuzeo\Queue\Retry\RetryDecision $decision): void
+    {
+        $envelope = $reservation->envelope;
+        $dims = \Fuzeo\Queue\Metrics\MetricDimensions::fromEnvelope($envelope, '', $decision->willRetry ? 'retry' : 'dead');
+        $this->metrics?->increment(\Fuzeo\Queue\Metrics\MetricName::JOBS_FAILED, 1, $dims);
+        if ($decision->willRetry) {
+            $this->metrics?->increment(\Fuzeo\Queue\Metrics\MetricName::JOBS_RETRIED, 1, $dims);
+            $this->metrics?->increment(\Fuzeo\Queue\Metrics\MetricName::RETRY_ATTEMPTS, 1, $dims);
+            if ($decision->availableAt !== null) {
+                $delay = max(0.0, ($decision->availableAt->getTimestamp() - $this->clock->now()->getTimestamp()) * 1000.0);
+                $this->metrics?->observe(\Fuzeo\Queue\Metrics\MetricName::RETRY_DELAY_MS, $delay, $dims);
+            }
+        } else {
+            $this->metrics?->increment(\Fuzeo\Queue\Metrics\MetricName::RETRY_EXHAUSTED, 1, $dims);
+            $this->metrics?->increment(\Fuzeo\Queue\Metrics\MetricName::JOBS_DEAD, 1, $dims);
+        }
     }
 
     private function heartbeat(): void

@@ -7,17 +7,37 @@ namespace Fuzeo\Queue\Core;
 use Fuzeo\Queue\Config\Config;
 use Fuzeo\Queue\Contracts\Clock;
 use Fuzeo\Queue\Contracts\ExecutionContextResolver;
+use Fuzeo\Queue\Drivers\MySql\MySqlDriver;
 use Fuzeo\Queue\Drivers\ProvidesIdempotencyStore;
+use Fuzeo\Queue\Drivers\ProvidesJobCatalog;
 use Fuzeo\Queue\Drivers\ProvidesScheduleStore;
 use Fuzeo\Queue\Drivers\ProvidesUniqueStore;
 use Fuzeo\Queue\Drivers\QueueDriver;
+use Fuzeo\Queue\Drivers\Redis\RedisDriver;
 use Fuzeo\Queue\Idempotency\Idempotency;
 use Fuzeo\Queue\Idempotency\IdempotencyStore;
 use Fuzeo\Queue\Idempotency\MemoryIdempotencyStore;
+use Fuzeo\Queue\Inspection\EmptyJobCatalog;
+use Fuzeo\Queue\Inspection\JobCatalog;
 use Fuzeo\Queue\Jobs\EnvelopeFactory;
 use Fuzeo\Queue\Jobs\JobRegistry;
+use Fuzeo\Queue\Metrics\IsolatingRecorder;
+use Fuzeo\Queue\Metrics\MemoryMetricsRepository;
+use Fuzeo\Queue\Metrics\MetricRecorder;
+use Fuzeo\Queue\Metrics\MetricsQuery;
+use Fuzeo\Queue\Metrics\MetricsRepository;
+use Fuzeo\Queue\Metrics\MetricsRetention;
+use Fuzeo\Queue\Metrics\MysqlMetricsRepository;
+use Fuzeo\Queue\Metrics\NullRecorder;
+use Fuzeo\Queue\Metrics\RedisMetricsRepository;
+use Fuzeo\Queue\Metrics\RepositoryRecorder;
+use Fuzeo\Queue\Operations\MemoryAuditStore;
+use Fuzeo\Queue\Operations\MysqlAuditStore;
+use Fuzeo\Queue\Operations\Operations;
+use Fuzeo\Queue\Operations\RedisAuditStore;
 use Fuzeo\Queue\Persistence\MigrationRunner;
 use Fuzeo\Queue\Runtime\ConsumerRegistry;
+use Fuzeo\Queue\Runtime\NullLogger;
 use Fuzeo\Queue\Schedule\AlwaysPresentSites;
 use Fuzeo\Queue\Schedule\MemoryScheduleStore;
 use Fuzeo\Queue\Schedule\ScheduleBook;
@@ -50,6 +70,14 @@ final class QueueManager
 
     private Orchestrator $orchestrator;
 
+    private MetricRecorder $recorder;
+
+    private MetricsRepository $metricsRepository;
+
+    private Operations $operations;
+
+    private \Fuzeo\Queue\Operations\AuditStore $audit;
+
     private readonly SitePresence $sites;
 
     public function __construct(
@@ -64,7 +92,10 @@ final class QueueManager
     ) {
         $this->sites = $sites ?? (function_exists('get_current_blog_id') ? new WordPressSitePresence() : new AlwaysPresentSites());
         $this->consumers = new ConsumerRegistry();
-        $this->rebuildControlPlane();
+        $this->recorder = new NullRecorder();
+        $this->metricsRepository = new MemoryMetricsRepository();
+        $this->audit = new MemoryAuditStore();
+        $this->rebuildObservability();
     }
 
     public function consumers(): ConsumerRegistry
@@ -132,6 +163,31 @@ final class QueueManager
         return $this->orchestrator;
     }
 
+    public function metrics(): MetricRecorder
+    {
+        return $this->recorder;
+    }
+
+    public function metricsRepository(): MetricsRepository
+    {
+        return $this->metricsRepository;
+    }
+
+    public function operations(): Operations
+    {
+        return $this->operations;
+    }
+
+    public function catalog(): JobCatalog
+    {
+        $driver = $this->driver();
+        if ($driver instanceof ProvidesJobCatalog) {
+            return $driver->catalog();
+        }
+
+        return new EmptyJobCatalog();
+    }
+
     /**
      * @param list<\Fuzeo\Queue\Jobs\Job> $jobs
      */
@@ -157,7 +213,7 @@ final class QueueManager
     {
         if ($this->fake === null) {
             $this->fake = new FakeQueue($this->clock);
-            $this->rebuildControlPlane();
+            $this->rebuildObservability();
         }
 
         /** @var FakeQueue $fake */
@@ -169,13 +225,13 @@ final class QueueManager
     public function useFake(FakeQueue $fake): void
     {
         $this->fake = $fake;
-        $this->rebuildControlPlane();
+        $this->rebuildObservability();
     }
 
     public function clearFake(): void
     {
         $this->fake = null;
-        $this->rebuildControlPlane();
+        $this->rebuildObservability();
     }
 
     public function isFaked(): bool
@@ -195,7 +251,7 @@ final class QueueManager
             $this->config->defaultTimeoutSeconds,
         );
 
-        return new Dispatcher($factory, $driver, $this->config, $this->fake, $this->clock);
+        return new Dispatcher($factory, $driver, $this->config, $this->fake, $this->clock, $this->recorder);
     }
 
     private function rebuildControlPlane(): void
@@ -234,6 +290,55 @@ final class QueueManager
             $this->registry,
             $this->contextResolver,
         );
+        $this->operations = new Operations(
+            $this,
+            $this->recorder,
+            new MetricsQuery($this->metricsRepository),
+            $this->metricsRepository,
+            $this->audit,
+            $this->catalog(),
+            $this->clock,
+            new \Fuzeo\Queue\Operations\HealthThresholds(
+                lagDegradedSeconds: $this->config->healthLagDegradedSeconds,
+                lagCriticalSeconds: $this->config->healthLagCriticalSeconds,
+                deadDegraded: $this->config->healthDeadDegraded,
+                deadCritical: $this->config->healthDeadCritical,
+                backlogCritical: $this->config->siteHealthBacklogCritical,
+                staleWorkerSeconds: $this->config->staleWorkerSeconds,
+            ),
+            new MetricsRetention(
+                $this->config->metricsMinuteHours,
+                $this->config->metricsHourDays,
+                $this->config->metricsDayDays,
+                $this->config->metricsIncludeSite,
+            ),
+        );
+    }
+
+    private function rebuildObservability(): void
+    {
+        $retention = new MetricsRetention(
+            $this->config->metricsMinuteHours,
+            $this->config->metricsHourDays,
+            $this->config->metricsDayDays,
+            $this->config->metricsIncludeSite,
+        );
+        $driver = $this->driver();
+        if ($driver instanceof MySqlDriver) {
+            $this->metricsRepository = new MysqlMetricsRepository($driver->connection());
+            $this->audit = new MysqlAuditStore($driver->connection());
+        } elseif ($driver instanceof RedisDriver) {
+            $this->metricsRepository = new RedisMetricsRepository($driver->redis(), $driver->keys(), $retention);
+            $this->audit = new RedisAuditStore($driver->redis(), $driver->keys());
+        } else {
+            $this->metricsRepository = new MemoryMetricsRepository();
+            $this->audit = new MemoryAuditStore();
+        }
+        $inner = $this->config->metricsEnabled
+            ? new RepositoryRecorder($this->metricsRepository, $this->clock, $retention->includeSiteDimension)
+            : new NullRecorder();
+        $this->recorder = new IsolatingRecorder($inner, new NullLogger());
+        $this->rebuildControlPlane();
     }
 
     private function orchestrationStore(): \Fuzeo\Queue\Orchestration\OrchestrationStore

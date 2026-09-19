@@ -1,0 +1,30 @@
+.fuzeo-queue-admin .fuzeo-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: 1rem;
+  list-style: none;
+  padding: 0;
+}
+.fuzeo-queue-admin .fuzeo-cards li {
+  background: #fff;
+  border: 1px solid #c3c4c7;
+  padding: 0.75rem 1rem;
+}
+.fuzeo-queue-admin .fuzeo-status {
+  font-weight: 600;
+}
+.fuzeo-queue-admin .fuzeo-status--healthy::after {
+  content: " (healthy)";
+}
+.fuzeo-queue-admin .fuzeo-status--degraded::after {
+  content: " (degraded)";
+}
+.fuzeo-queue-admin .fuzeo-status--critical::after {
+  content: " (critical)";
+}
+@media (max-width: 782px) {
+  .fuzeo-queue-admin table {
+    display: block;
+    overflow-x: auto;
+  }
+}

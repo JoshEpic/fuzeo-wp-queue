@@ -20,6 +20,8 @@ final class Schema
     public const CHAIN_STEPS = 'fuzeo_queue_chain_steps';
     public const BATCHES = 'fuzeo_queue_batches';
     public const BATCH_MEMBERS = 'fuzeo_queue_batch_members';
+    public const METRICS = 'fuzeo_queue_metrics';
+    public const AUDIT = 'fuzeo_queue_audit';
     public const META = 'fuzeo_queue_meta';
     public const LOCK = 'fuzeo_queue_schema';
     public const META_VERSION = 'schema_version';

@@ -19,7 +19,10 @@ use Fuzeo\Queue\Drivers\ProvidesWorkerStore;
 use Fuzeo\Queue\Drivers\QueueDriver;
 use Fuzeo\Queue\Drivers\CancelsJobs;
 use Fuzeo\Queue\Drivers\CancelResult;
+use Fuzeo\Queue\Drivers\ProvidesJobCatalog;
 use Fuzeo\Queue\Drivers\ProvidesOrchestration;
+use Fuzeo\Queue\Inspection\JobCatalog;
+use Fuzeo\Queue\Inspection\RedisJobCatalog;
 use Fuzeo\Queue\Drivers\Reconnectable;
 use Fuzeo\Queue\Drivers\ReliableAcknowledger;
 use Fuzeo\Queue\Drivers\ReleaseOptions;
@@ -56,7 +59,7 @@ use Fuzeo\Queue\Unique\UniqueStore;
 use Fuzeo\Queue\Retry\AttemptRecord;
 use Fuzeo\Queue\Worker\WorkerStore;
 
-final class RedisDriver implements QueueDriver, FailureStore, ReliableAcknowledger, Reconnectable, ProvidesWorkerStore, StatusAware, ProvidesUniqueStore, ProvidesIdempotencyStore, ProvidesScheduleStore, ProvidesOrchestration, CancelsJobs
+final class RedisDriver implements QueueDriver, FailureStore, ReliableAcknowledger, Reconnectable, ProvidesWorkerStore, StatusAware, ProvidesUniqueStore, ProvidesIdempotencyStore, ProvidesScheduleStore, ProvidesOrchestration, ProvidesJobCatalog, CancelsJobs
 {
     public const MIN_REDIS_VERSION = '6.0.0';
 
@@ -90,7 +93,7 @@ final class RedisDriver implements QueueDriver, FailureStore, ReliableAcknowledg
         $this->schedules = new RedisScheduleStore($redis, $this->keys, $clock);
         $this->orchestration = new RedisOrchestrationStore($redis, $this->keys, $clock);
         $this->assertVersion();
-        $this->redis->command('HSET', [$this->keys->meta(), 'driver', 'redis', 'package', 'fuzeowp/queue', 'schema_version', '5']);
+        $this->redis->command('HSET', [$this->keys->meta(), 'driver', 'redis', 'package', 'fuzeowp/queue', 'schema_version', (string) \Fuzeo\Queue\Persistence\SchemaOwner::CURRENT_VERSION]);
     }
 
     public function redis(): RedisClient
@@ -136,6 +139,16 @@ final class RedisDriver implements QueueDriver, FailureStore, ReliableAcknowledg
     public function workerStore(): WorkerStore
     {
         return new RedisWorkerStore($this->redis, $this->keys, $this->clock, max(30, $this->config->staleWorkerSeconds * 3));
+    }
+
+    public function catalog(): JobCatalog
+    {
+        return new RedisJobCatalog($this->redis, $this->keys, $this->clock);
+    }
+
+    public function keys(): RedisKeys
+    {
+        return $this->keys;
     }
 
     public function enqueue(Envelope $envelope): EnqueuedJob
@@ -589,7 +602,7 @@ final class RedisDriver implements QueueDriver, FailureStore, ReliableAcknowledg
             atomicUniqueness: true,
             distributedLocks: true,
             delayedJobs: true,
-            advancedMetrics: false,
+            advancedMetrics: true,
             durable: true,
             atomicRateLimits: true,
             queueConcurrency: true,

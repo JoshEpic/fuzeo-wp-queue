@@ -125,7 +125,7 @@ final class SiteHealth
         if ($pending > 0 && $alive === 0) {
             $status = $pending >= $this->backlogCritical ? 'critical' : 'recommended';
 
-            return $this->result($status, 'There are ' . $pending . ' pending jobs and no live workers.');
+            return $this->result($status, 'Jobs are waiting, but no active Fuzeo Queue worker is detected.');
         }
         if ($stale > 0) {
             return $this->result('recommended', $stale . ' worker heartbeat(s) are stale.');

@@ -85,6 +85,7 @@ final class WpdbConnection implements Connection
 
     public function begin(): void
     {
+        $this->wpdb->query('SET TRANSACTION ISOLATION LEVEL READ COMMITTED');
         $this->wpdb->query('START TRANSACTION');
     }
 

@@ -46,6 +46,15 @@ final class Config
         public readonly bool $runtimeReset = true,
         public readonly bool $workerRecycleOnContextError = true,
         public readonly int $siteHealthBacklogCritical = 1000,
+        public readonly bool $metricsEnabled = true,
+        public readonly int $metricsMinuteHours = 48,
+        public readonly int $metricsHourDays = 30,
+        public readonly int $metricsDayDays = 90,
+        public readonly bool $metricsIncludeSite = true,
+        public readonly int $healthLagDegradedSeconds = 60,
+        public readonly int $healthLagCriticalSeconds = 300,
+        public readonly int $healthDeadDegraded = 10,
+        public readonly int $healthDeadCritical = 100,
     ) {
     }
 
@@ -87,6 +96,15 @@ final class Config
             runtimeReset: $this->bool($values, 'runtime_reset', $this->runtimeReset),
             workerRecycleOnContextError: $this->bool($values, 'worker_recycle_on_context_error', $this->workerRecycleOnContextError),
             siteHealthBacklogCritical: $this->int($values, 'site_health_backlog_critical', $this->siteHealthBacklogCritical),
+            metricsEnabled: $this->bool($values, 'metrics_enabled', $this->metricsEnabled),
+            metricsMinuteHours: $this->int($values, 'metrics_minute_hours', $this->metricsMinuteHours),
+            metricsHourDays: $this->int($values, 'metrics_hour_days', $this->metricsHourDays),
+            metricsDayDays: $this->int($values, 'metrics_day_days', $this->metricsDayDays),
+            metricsIncludeSite: $this->bool($values, 'metrics_include_site', $this->metricsIncludeSite),
+            healthLagDegradedSeconds: $this->int($values, 'health_lag_degraded_seconds', $this->healthLagDegradedSeconds),
+            healthLagCriticalSeconds: $this->int($values, 'health_lag_critical_seconds', $this->healthLagCriticalSeconds),
+            healthDeadDegraded: $this->int($values, 'health_dead_degraded', $this->healthDeadDegraded),
+            healthDeadCritical: $this->int($values, 'health_dead_critical', $this->healthDeadCritical),
         );
     }
 

@@ -42,5 +42,14 @@ Precedence, highest first:
 | `runtime_reset` | `FUZEO_QUEUE_RUNTIME_RESET` | `true` |
 | `worker_recycle_on_context_error` | `FUZEO_QUEUE_WORKER_RECYCLE_ON_CONTEXT_ERROR` | `true` |
 | `site_health_backlog_critical` | `FUZEO_QUEUE_SITE_HEALTH_BACKLOG_CRITICAL` | `1000` |
+| `metrics_enabled` | `FUZEO_QUEUE_METRICS_ENABLED` | `true` |
+| `metrics_minute_hours` | `FUZEO_QUEUE_METRICS_MINUTE_HOURS` | `48` |
+| `metrics_hour_days` | `FUZEO_QUEUE_METRICS_HOUR_DAYS` | `30` |
+| `metrics_day_days` | `FUZEO_QUEUE_METRICS_DAY_DAYS` | `90` |
+| `metrics_include_site` | `FUZEO_QUEUE_METRICS_INCLUDE_SITE` | `true` |
+| `health_lag_degraded_seconds` | `FUZEO_QUEUE_HEALTH_LAG_DEGRADED_SECONDS` | `60` |
+| `health_lag_critical_seconds` | `FUZEO_QUEUE_HEALTH_LAG_CRITICAL_SECONDS` | `300` |
+| `health_dead_degraded` | `FUZEO_QUEUE_HEALTH_DEAD_DEGRADED` | `10` |
+| `health_dead_critical` | `FUZEO_QUEUE_HEALTH_DEAD_CRITICAL` | `100` |
 
 Drivers: `mysql`, `redis` (PhpRedis), `memory` (tests), `unavailable` (fail closed), plus `Queue::fake()`. Switching drivers does not migrate jobs, schedules, uniqueness claims, or idempotency records. See [Redis](redis.md) and [ADR-050](adr/050-driver-switching-with-scheduler-uniqueness-state.md).
