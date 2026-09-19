@@ -1,0 +1,9 @@
+parameters:
+    level: 8
+    paths:
+        - src
+        - tests
+    tmpDir: /tmp/phpstan-fuzeo-queue
+    treatPhpDocTypesAsCertain: false
+    bootstrapFiles:
+        - tests/Support/WordPressStubs.php

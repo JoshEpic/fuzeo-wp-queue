@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<ruleset name="Fuzeo Queue">
+    <description>PSR-12 coding standard for Fuzeo Queue.</description>
+    <file>src</file>
+    <file>tests</file>
+    <exclude-pattern>vendor/</exclude-pattern>
+    <exclude-pattern>src/bootstrap.php</exclude-pattern>
+    <exclude-pattern>tests/Support/WordPressStubs.php</exclude-pattern>
+    <rule ref="PSR12"/>
+    <rule ref="Generic.Files.LineLength.TooLong">
+        <severity>0</severity>
+    </rule>
+    <arg name="extensions" value="php"/>
+    <arg name="colors"/>
+    <arg value="sp"/>
+</ruleset>
