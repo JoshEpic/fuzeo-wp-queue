@@ -20,8 +20,8 @@ final class WordPressCoreTest extends TestCase
 {
     protected function setUp(): void
     {
-        if (!function_exists('switch_to_blog') || !function_exists('wp_insert_user')) {
-            self::markTestSkipped('WP_TESTS_DIR is not configured. Install the WordPress test suite to enable Core tests.');
+        if (!defined('ABSPATH') || !function_exists('wp_insert_user')) {
+            self::markTestSkipped('WP_TESTS_DIR is not configured. Install the WordPress test suite to enable these tests.');
         }
         Coordinator::bootForTesting(['driver' => 'memory']);
         WordPressBootstrap::register();

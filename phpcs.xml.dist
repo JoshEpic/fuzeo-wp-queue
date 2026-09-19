@@ -5,6 +5,7 @@
     <file>tests</file>
     <exclude-pattern>vendor/</exclude-pattern>
     <exclude-pattern>src/bootstrap.php</exclude-pattern>
+    <exclude-pattern>tests/bootstrap.php</exclude-pattern>
     <exclude-pattern>tests/Support/WordPressStubs.php</exclude-pattern>
     <exclude-pattern>tests/Support/WpdbStub.php</exclude-pattern>
     <exclude-pattern>tests/Support/RedisStubs.php</exclude-pattern>

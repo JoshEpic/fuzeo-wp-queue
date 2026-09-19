@@ -14,7 +14,7 @@ final class Phase10WordPressTest extends TestCase
 {
     protected function setUp(): void
     {
-        if (!function_exists('wp_insert_user')) {
+        if (!defined('ABSPATH') || !function_exists('wp_insert_user')) {
             self::markTestSkipped('WP_TESTS_DIR is not configured.');
         }
         Coordinator::bootForTesting(['driver' => 'memory']);

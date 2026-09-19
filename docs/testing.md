@@ -68,7 +68,7 @@ export FUZEO_QUEUE_TEST_REDIS_DB=15
 vendor/bin/phpunit --testsuite Redis,Conformance
 ```
 
-WordPress Core / multisite tests require `WP_TESTS_DIR` (see `bin/install-wp-tests.sh`). WooCommerce tests skip unless WooCommerce is installed in that suite. Minimum supported WordPress is 6.2.
+WordPress integration tests (`--testsuite WordPress`) need a downloaded WordPress tree via `bin/install-wp-tests.sh` and `WP_TESTS_DIR`. They are **not** WordPress Core tests; `WP_RUN_CORE_TESTS` stays off. `yoast/phpunit-polyfills` is required because the WP test bootstrap still checks for it. WooCommerce tests skip unless WooCommerce is installed in that suite. Minimum supported WordPress is 6.2.
 
 Phase 8 metrics/operations tests live in `tests/Unit/Phase8*.php`, `tests/MySql/MysqlMetricsTest.php`, and `tests/Redis/RedisMetricsTest.php`. 100k-row history fixtures are not part of the default PHPUnit job.
 

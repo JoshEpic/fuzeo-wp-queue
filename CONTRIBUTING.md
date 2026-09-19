@@ -18,7 +18,7 @@ vendor/bin/phpunit --testsuite Unit
 | MySQL / Conformance MySQL | `FUZEO_QUEUE_TEST_DB_*` and SKIP LOCKED |
 | Redis | `ext-redis` and `FUZEO_QUEUE_TEST_REDIS_*` |
 | Process | POSIX + MySQL or Redis as documented per test |
-| WordPress | `WP_TESTS_DIR` from `bin/install-wp-tests.sh` |
+| WordPress (integration, not Core) | `WP_TESTS_DIR` from `bin/install-wp-tests.sh` plus `yoast/phpunit-polyfills` |
 | WooCommerce | WordPress suite + WooCommerce installed |
 | Scale (`10k` batch/soak) | `FUZEO_QUEUE_SCALE_TESTS=1` |
 
