@@ -10,6 +10,7 @@ use Fuzeo\Queue\Contracts\Clock;
 use Fuzeo\Queue\Contracts\ExecutionContextResolver;
 use Fuzeo\Queue\Core\QueueManager;
 use Fuzeo\Queue\Drivers\Memory\MemoryDriver;
+use Fuzeo\Queue\Drivers\MySql\MySqlDriver;
 use Fuzeo\Queue\Drivers\QueueDriver;
 use Fuzeo\Queue\Drivers\UnavailableDriver;
 use Fuzeo\Queue\Exceptions\ConfigurationException;
@@ -18,11 +19,14 @@ use Fuzeo\Queue\Jobs\JobRegistry;
 use Fuzeo\Queue\Jobs\StaticContextResolver;
 use Fuzeo\Queue\Jobs\ExecutionContext;
 use Fuzeo\Queue\Persistence\BaselineMigration;
+use Fuzeo\Queue\Persistence\Connection;
+use Fuzeo\Queue\Persistence\DatabaseMigrationRepository;
 use Fuzeo\Queue\Persistence\MemoryMigrationLock;
 use Fuzeo\Queue\Persistence\MemoryMigrationRepository;
-use Fuzeo\Queue\Persistence\MigrationLock;
-use Fuzeo\Queue\Persistence\MigrationRepository;
+use Fuzeo\Queue\Persistence\MysqlAdvisoryLock;
 use Fuzeo\Queue\Persistence\MigrationRunner;
+use Fuzeo\Queue\Persistence\QueueTablesMigration;
+use Fuzeo\Queue\Persistence\WpdbConnection;
 use Fuzeo\Queue\Serialization\JsonPayloadSerializer;
 use Fuzeo\Queue\Serialization\PayloadLimits;
 use Fuzeo\Queue\Support\SystemClock;
@@ -41,6 +45,8 @@ final class Coordinator
     private static int $bootCount = 0;
 
     private static bool $integrationsRegistered = false;
+
+    private static ?Connection $connection = null;
 
     /**
      * @param array<string, mixed> $config
@@ -129,6 +135,7 @@ final class Coordinator
         self::$diagnostics = [];
         self::$bootCount = 0;
         self::$integrationsRegistered = false;
+        self::$connection = null;
         $GLOBALS['fuzeo_queue_kernel'] = [
             'candidates' => $GLOBALS['fuzeo_queue_kernel']['candidates'] ?? [],
             'booted' => false,
@@ -146,18 +153,26 @@ final class Coordinator
     /**
      * @param array<string, mixed> $config
      */
-    public static function bootForTesting(array $config = [], ?QueueDriver $driver = null, ?ExecutionContextResolver $context = null, ?Clock $clock = null): QueueManager
-    {
+    public static function bootForTesting(
+        array $config = [],
+        ?QueueDriver $driver = null,
+        ?ExecutionContextResolver $context = null,
+        ?Clock $clock = null,
+        ?Connection $connection = null,
+    ): QueueManager {
         self::reset();
         $resolved = (new ConfigRepository())->resolve($config);
-        if (!isset($config['driver'])) {
+        if (!isset($config['driver']) && $driver === null && $connection === null) {
             $resolved = $resolved->merge(['driver' => Config::DRIVER_MEMORY]);
         }
-        $manager = self::createManager($resolved, $driver, $context, $clock);
+        $manager = self::createManager($resolved, $driver, $context, $clock, $connection);
         self::$manager = $manager;
         self::$bootCount = 1;
         self::kernelSet('booted', true);
         self::kernelSet('boot_count', 1);
+        if (self::$connection !== null) {
+            self::runOwnedMigrations($manager);
+        }
 
         return $manager;
     }
@@ -219,10 +234,13 @@ final class Coordinator
         ?QueueDriver $driver = null,
         ?ExecutionContextResolver $context = null,
         ?Clock $clock = null,
+        ?Connection $connection = null,
     ): QueueManager {
         $clock ??= new SystemClock();
         $context ??= self::defaultContextResolver();
-        $driver ??= self::makeDriver($config, $clock);
+        $connection ??= self::detectConnection($config);
+        self::$connection = $connection;
+        $driver ??= self::makeDriver($config, $clock, $connection);
         $serializer = new JsonPayloadSerializer(new PayloadLimits($config->maxPayloadBytes, $config->maxPayloadDepth));
 
         return new QueueManager(
@@ -232,19 +250,60 @@ final class Coordinator
             serializer: $serializer,
             contextResolver: $context,
             clock: $clock,
-            migrations: new MigrationRunner(new MemoryMigrationRepository(), new MemoryMigrationLock()),
+            migrations: self::makeMigrations($connection),
         );
     }
 
-    private static function makeDriver(Config $config, Clock $clock): QueueDriver
+    private static function detectConnection(Config $config): ?Connection
     {
-        return match ($config->driver) {
+        if ($config->driver !== Config::DRIVER_MYSQL && $config->driver !== Config::DRIVER_UNAVAILABLE) {
+            return null;
+        }
+        if (isset($GLOBALS['wpdb']) && is_object($GLOBALS['wpdb'])) {
+            return WpdbConnection::fromGlobals();
+        }
+
+        return null;
+    }
+
+    private static function makeDriver(Config $config, Clock $clock, ?Connection $connection): QueueDriver
+    {
+        $name = $config->driver;
+        if ($name === Config::DRIVER_UNAVAILABLE && $connection !== null) {
+            $name = Config::DRIVER_MYSQL;
+        }
+
+        return match ($name) {
             Config::DRIVER_MEMORY => new MemoryDriver($clock),
             Config::DRIVER_UNAVAILABLE => new UnavailableDriver(),
+            Config::DRIVER_MYSQL => self::makeMysqlDriver($connection, $clock, $config),
             default => throw new ConfigurationException(
-                'Unknown queue driver "' . $config->driver . '". Phase 1 supports memory (tests) and unavailable (default).'
+                'Unknown queue driver "' . $config->driver . '". Supported: mysql, memory, unavailable.'
             ),
         };
+    }
+
+    private static function makeMysqlDriver(?Connection $connection, Clock $clock, Config $config): MySqlDriver
+    {
+        if ($connection === null) {
+            throw new ConfigurationException(
+                'The mysql driver requires WordPress $wpdb or an injected database connection.'
+            );
+        }
+
+        return new MySqlDriver($connection, $clock, $config);
+    }
+
+    private static function makeMigrations(?Connection $connection): MigrationRunner
+    {
+        if ($connection === null) {
+            return new MigrationRunner(new MemoryMigrationRepository(), new MemoryMigrationLock());
+        }
+
+        return new MigrationRunner(
+            new DatabaseMigrationRepository($connection),
+            new MysqlAdvisoryLock($connection),
+        );
     }
 
     private static function defaultContextResolver(): ExecutionContextResolver
@@ -302,7 +361,11 @@ final class Coordinator
 
     private static function runOwnedMigrations(QueueManager $manager): void
     {
-        $result = $manager->migrations()->run([new BaselineMigration()]);
+        $migrations = [new BaselineMigration(self::$connection)];
+        if (self::$connection !== null) {
+            $migrations[] = new QueueTablesMigration(self::$connection);
+        }
+        $result = $manager->migrations()->run($migrations);
         $current = (int) (self::kernel()['migrations_run'] ?? 0);
         self::kernelSet('migrations_run', $current + ($result->lockedOut ? 0 : 1));
     }

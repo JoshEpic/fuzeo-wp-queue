@@ -115,12 +115,16 @@ if (!function_exists('add_action')) {
 if (!class_exists('WP_CLI')) {
     final class WP_CLI
     {
-        /** @var array<string, callable> */
+        /** @var array<string, callable|string|object> */
         public static array $commands = [];
 
-        public static function add_command(string $name, callable $callable): void
+        public static function add_command(string $name, callable|string|object $callable): void
         {
             self::$commands[$name] = $callable;
+        }
+
+        public static function log(string $message): void
+        {
         }
 
         public static function error(string $message): void

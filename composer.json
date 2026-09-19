@@ -10,11 +10,11 @@
         "background",
         "fuzeo"
     ],
-    "homepage": "https://github.com/fuzeowp/queue",
+    "homepage": "https://github.com/JoshEpic/fuzeo-wp-queue",
     "authors": [
         {
-            "name": "Fuzeo",
-            "homepage": "https://fuzeo.com"
+            "name": "JoshEpic",
+            "homepage": "https://joshdavies.me"
         }
     ],
     "require": {

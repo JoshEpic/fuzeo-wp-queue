@@ -40,7 +40,9 @@ $runtime->jobs()->registerJob(
 
 Duplicate types are allowed only when handler class, schema version, and job class match. Any other conflict throws `DuplicateJobTypeException`. Unknown types throw `UnknownJobException`.
 
-## Dispatch (Phase 1)
+Handlers implement `Handler::handle(Envelope $envelope)` and must be constructible with no required arguments. Unknown types and missing plugins fail the reserved job; they are not deserialized from PHP class names.
+
+## Dispatch
 
 ```php
 use Fuzeo\Queue\Queue;
@@ -51,7 +53,7 @@ Queue::later($timestamp, $job);
 Queue::on('imports')->onSite(1, 42)->dispatch($job);
 ```
 
-Without a durable driver these calls persist only if you use `Queue::fake()` or `driver=memory`. The default driver is `unavailable` so production code cannot pretend jobs were stored.
+With WordPress `$wpdb` present, dispatch uses the MySQL driver. Use `Queue::fake()` in tests.
 
 ## Envelope vs job schema
 

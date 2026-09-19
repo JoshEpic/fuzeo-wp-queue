@@ -17,5 +17,13 @@ Precedence, highest first:
 | `default_max_attempts` | `FUZEO_QUEUE_DEFAULT_MAX_ATTEMPTS` | `3` |
 | `default_timeout_seconds` | `FUZEO_QUEUE_DEFAULT_TIMEOUT_SECONDS` | `60` |
 | `redact_payloads` | `FUZEO_QUEUE_REDACT_PAYLOADS` | `true` |
+| `lease_seconds` | `FUZEO_QUEUE_LEASE_SECONDS` | `90` |
+| `worker_sleep` | `FUZEO_QUEUE_WORKER_SLEEP` | `1` |
+| `worker_timeout` | `FUZEO_QUEUE_WORKER_TIMEOUT` | `60` |
+| `worker_memory` | `FUZEO_QUEUE_WORKER_MEMORY` | `134217728` (bytes) |
+| `worker_max_jobs` | `FUZEO_QUEUE_WORKER_MAX_JOBS` | `0` (unlimited) |
+| `worker_max_runtime` | `FUZEO_QUEUE_WORKER_MAX_RUNTIME` | `0` |
+| `heartbeat_interval` | `FUZEO_QUEUE_HEARTBEAT_INTERVAL` | `10` |
+| `stale_worker_threshold` | `FUZEO_QUEUE_STALE_WORKER_THRESHOLD` | `30` |
 
-Phase 1 drivers: `unavailable` (default) and `memory` (tests). `mysql` is Phase 2.
+Drivers: `mysql` (production when `$wpdb` exists), `memory` (tests), `unavailable` (fail closed), plus `Queue::fake()`.

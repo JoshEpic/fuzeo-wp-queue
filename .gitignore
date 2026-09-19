@@ -4,6 +4,7 @@
 .phpunit.cache/
 .php-cs-fixer.cache
 /coverage/
+/reports/
 .idea/
 .vscode/
 .DS_Store

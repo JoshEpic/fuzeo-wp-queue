@@ -8,11 +8,12 @@ composer require fuzeowp/queue
 
 Fuzeo Queue is a Composer library, not a WordPress plugin and not a wrapper around WP-Cron or Action Scheduler. It owns its queue architecture.
 
-Phase 1 ships the kernel: runtime coordination, job contracts, JSON-safe envelopes, driver semantics, and a fake queue for tests. Persistent MySQL storage and workers arrive in Phase 2.
+Phase 2 ships a durable MySQL driver and `wp fuzeo-queue work` CLI workers.
 
 ## Requirements
 
 - PHP 8.1+
+- MySQL 8.0.1+ or MariaDB 10.6+ for production
 - WordPress is optional at the package boundary. Requiring the package loads classes; it does not mutate WordPress until a runtime boots on `plugins_loaded`.
 
 ## Quick start
@@ -45,14 +46,13 @@ final class ProcessOrder implements Job
 add_action('fuzeo_queue_ready', function ($runtime): void {
     $origin = new Origin('acme/shop', '1.2.0');
     $runtime->consumers()->register($origin);
-    $runtime->jobs()->registerJob(ProcessOrder::class, $origin);
+    $runtime->jobs()->registerJob(ProcessOrder::class, $origin, ProcessOrderHandler::class);
 });
 
-// Durable dispatch requires the Phase 2 MySQL driver.
-// In tests:
-Queue::fake();
 Queue::dispatch(new ProcessOrder(123));
-Queue::assertDispatched(ProcessOrder::class);
+
+// Independent worker:
+// wp fuzeo-queue work
 ```
 
 ## Safe payloads
@@ -66,12 +66,15 @@ Store IDs and primitive data, not live PHP or WordPress objects.
 
 ## Delivery semantics
 
-Fuzeo Queue targets **at-least-once** execution. Jobs may run more than once. Make handlers idempotent.
+Fuzeo Queue is **at-least-once**. A worker may crash after a side effect and before ACK; after the lease expires another worker will run the job. Handlers must be idempotent.
 
 ## Documentation
 
 - [Bootstrapping](docs/bootstrapping.md)
 - [Jobs and payloads](docs/jobs.md)
+- [MySQL driver](docs/mysql.md)
+- [Workers](docs/workers.md)
+- [Troubleshooting](docs/troubleshooting.md)
 - [Testing](docs/testing.md)
 - [Configuration](docs/configuration.md)
 - [Multisite](docs/multisite.md)

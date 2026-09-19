@@ -7,3 +7,4 @@ parameters:
     treatPhpDocTypesAsCertain: false
     bootstrapFiles:
         - tests/Support/WordPressStubs.php
+        - tests/Support/WpdbStub.php

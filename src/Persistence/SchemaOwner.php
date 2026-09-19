@@ -14,7 +14,7 @@ final class SchemaOwner
     public const OPTION_LOCK = 'fuzeo_queue_schema_lock';
 
     /**
-     * Production schema version. 1 records ownership; queue tables arrive in Phase 2.
+     * Production schema version. 2 is jobs + workers + metadata tables.
      */
-    public const CURRENT_VERSION = 1;
+    public const CURRENT_VERSION = 2;
 }

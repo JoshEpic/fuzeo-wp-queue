@@ -31,9 +31,7 @@ final class CliRegistrar
             return;
         }
 
-        \WP_CLI::add_command(self::COMMAND, static function (): void {
-            \WP_CLI::error('Fuzeo Queue worker and inspect commands are not available until Phase 2.');
-        });
+        \WP_CLI::add_command(self::COMMAND, QueueCommand::class);
     }
 
     public static function registrationCount(): int

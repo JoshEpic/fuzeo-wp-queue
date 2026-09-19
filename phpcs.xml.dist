@@ -6,6 +6,8 @@
     <exclude-pattern>vendor/</exclude-pattern>
     <exclude-pattern>src/bootstrap.php</exclude-pattern>
     <exclude-pattern>tests/Support/WordPressStubs.php</exclude-pattern>
+    <exclude-pattern>tests/Support/WpdbStub.php</exclude-pattern>
+    <exclude-pattern>tests/bin/</exclude-pattern>
     <rule ref="PSR12"/>
     <rule ref="Generic.Files.LineLength.TooLong">
         <severity>0</severity>

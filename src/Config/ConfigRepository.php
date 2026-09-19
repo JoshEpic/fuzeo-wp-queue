@@ -85,6 +85,14 @@ final class ConfigRepository
             'FUZEO_QUEUE_DEFAULT_MAX_ATTEMPTS' => 'default_max_attempts',
             'FUZEO_QUEUE_DEFAULT_TIMEOUT_SECONDS' => 'default_timeout_seconds',
             'FUZEO_QUEUE_REDACT_PAYLOADS' => 'redact_payloads',
+            'FUZEO_QUEUE_LEASE_SECONDS' => 'lease_seconds',
+            'FUZEO_QUEUE_WORKER_SLEEP' => 'worker_sleep',
+            'FUZEO_QUEUE_WORKER_TIMEOUT' => 'worker_timeout',
+            'FUZEO_QUEUE_WORKER_MEMORY' => 'worker_memory',
+            'FUZEO_QUEUE_WORKER_MAX_JOBS' => 'worker_max_jobs',
+            'FUZEO_QUEUE_WORKER_MAX_RUNTIME' => 'worker_max_runtime',
+            'FUZEO_QUEUE_HEARTBEAT_INTERVAL' => 'heartbeat_interval',
+            'FUZEO_QUEUE_STALE_WORKER_THRESHOLD' => 'stale_worker_threshold',
         ];
 
         $values = [];

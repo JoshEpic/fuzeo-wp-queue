@@ -10,7 +10,11 @@ Reasons:
 - `wp fuzeo` is reserved for product CLIs (Bridge, Relay, Sync)
 - `wp fuzeo-queue` is owned by this package
 
-Only the winning runtime registers the command. Phase 1 does not implement worker commands.
+```php
+WP_CLI::add_command('fuzeo-queue', QueueCommand::class);
+```
+
+Subcommands: `work`, `status`, `workers`, `queues`.
 
 ## Admin UI
 

@@ -29,3 +29,15 @@ public function test_checkout_dispatches_processing(): void
 ```
 
 Assertions accept a job class or a stable type string such as `acme.process_order`.
+
+MySQL integration tests need a database:
+
+```bash
+docker compose up -d mysql
+export FUZEO_QUEUE_TEST_DB_HOST=127.0.0.1
+export FUZEO_QUEUE_TEST_DB_USER=root
+export FUZEO_QUEUE_TEST_DB_PASS=root
+export FUZEO_QUEUE_TEST_DB_NAME=fuzeo_queue_test
+vendor/bin/phpunit
+```
+

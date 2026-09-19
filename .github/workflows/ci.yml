@@ -10,7 +10,29 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        php: ['8.1', '8.2', '8.3']
+        include:
+          - php: '8.1'
+            db: mysql
+            image: mysql:8.0
+          - php: '8.2'
+            db: mariadb
+            image: mariadb:10.11
+          - php: '8.3'
+            db: mysql
+            image: mysql:8.4
+    services:
+      mysql:
+        image: ${{ matrix.image }}
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: fuzeo_queue_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
     steps:
       - uses: actions/checkout@v4
       - uses: shivammathur/setup-php@v2
@@ -18,7 +40,25 @@ jobs:
           php-version: ${{ matrix.php }}
           coverage: none
           tools: composer
+          extensions: pdo_mysql, mysqli, pcntl, posix
       - run: composer install --no-interaction --prefer-dist
       - run: vendor/bin/phpcs
       - run: vendor/bin/phpstan analyse --memory-limit=512M
-      - run: vendor/bin/phpunit
+      - name: PHPUnit
+        env:
+          FUZEO_QUEUE_TEST_DB_HOST: 127.0.0.1
+          FUZEO_QUEUE_TEST_DB_USER: root
+          FUZEO_QUEUE_TEST_DB_PASS: root
+          FUZEO_QUEUE_TEST_DB_NAME: fuzeo_queue_test
+        run: vendor/bin/phpunit
+      - name: WordPress test suite
+        env:
+          FUZEO_QUEUE_TEST_DB_HOST: 127.0.0.1
+          FUZEO_QUEUE_TEST_DB_USER: root
+          FUZEO_QUEUE_TEST_DB_PASS: root
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y rsync
+          bash bin/install-wp-tests.sh wordpress_test root root 127.0.0.1 latest true
+          export WP_TESTS_DIR="${TMPDIR:-/tmp}/wordpress-tests-lib"
+          vendor/bin/phpunit --testsuite WordPress

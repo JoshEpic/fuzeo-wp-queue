@@ -19,6 +19,15 @@
         <testsuite name="Security">
             <directory>tests/Security</directory>
         </testsuite>
+        <testsuite name="MySql">
+            <directory>tests/MySql</directory>
+        </testsuite>
+        <testsuite name="Process">
+            <directory>tests/Process</directory>
+        </testsuite>
+        <testsuite name="WordPress">
+            <directory>tests/WordPress</directory>
+        </testsuite>
     </testsuites>
     <source>
         <include>

@@ -8,6 +8,7 @@ final class Config
 {
     public const DRIVER_UNAVAILABLE = 'unavailable';
     public const DRIVER_MEMORY = 'memory';
+    public const DRIVER_MYSQL = 'mysql';
 
     public function __construct(
         public readonly string $driver = self::DRIVER_UNAVAILABLE,
@@ -17,6 +18,14 @@ final class Config
         public readonly int $defaultMaxAttempts = 3,
         public readonly int $defaultTimeoutSeconds = 60,
         public readonly bool $redactPayloads = true,
+        public readonly int $leaseSeconds = 90,
+        public readonly int $workerSleepSeconds = 1,
+        public readonly int $workerTimeoutSeconds = 60,
+        public readonly int $workerMemoryBytes = 134217728,
+        public readonly int $workerMaxJobs = 0,
+        public readonly int $workerMaxRuntimeSeconds = 0,
+        public readonly int $heartbeatIntervalSeconds = 10,
+        public readonly int $staleWorkerSeconds = 30,
     ) {
     }
 
@@ -33,6 +42,14 @@ final class Config
             defaultMaxAttempts: $this->int($values, 'default_max_attempts', $this->defaultMaxAttempts),
             defaultTimeoutSeconds: $this->int($values, 'default_timeout_seconds', $this->defaultTimeoutSeconds),
             redactPayloads: $this->bool($values, 'redact_payloads', $this->redactPayloads),
+            leaseSeconds: $this->int($values, 'lease_seconds', $this->leaseSeconds),
+            workerSleepSeconds: $this->int($values, 'worker_sleep', $this->workerSleepSeconds),
+            workerTimeoutSeconds: $this->int($values, 'worker_timeout', $this->workerTimeoutSeconds),
+            workerMemoryBytes: $this->int($values, 'worker_memory', $this->workerMemoryBytes),
+            workerMaxJobs: $this->int($values, 'worker_max_jobs', $this->workerMaxJobs),
+            workerMaxRuntimeSeconds: $this->int($values, 'worker_max_runtime', $this->workerMaxRuntimeSeconds),
+            heartbeatIntervalSeconds: $this->int($values, 'heartbeat_interval', $this->heartbeatIntervalSeconds),
+            staleWorkerSeconds: $this->int($values, 'stale_worker_threshold', $this->staleWorkerSeconds),
         );
     }
 

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Fuzeo\Queue\WordPress;
 
 use Fuzeo\Queue\Runtime\Coordinator;
+use Fuzeo\Queue\Runtime\Hooks;
 
 /**
  * WordPress hooks attach only after the winning runtime boots.
@@ -25,7 +26,7 @@ final class WordPressBootstrap
         $kernel['hooks_registered'] = 1;
 
         if (function_exists('do_action')) {
-            do_action('fuzeo_queue_ready', Coordinator::get());
+            do_action(Hooks::READY, Coordinator::get());
         }
     }
 

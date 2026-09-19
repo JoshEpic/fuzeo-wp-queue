@@ -9,29 +9,16 @@ src/
   Config/
   Contracts/
   Core/                  QueueManager, Dispatcher
-  Drivers/               contracts + Memory + Unavailable
-  Exceptions/
-  Jobs/                  Job, Envelope, Registry, state machine
-  Persistence/           migration ownership
-  Runtime/               Coordinator, PackageInfo
-  Serialization/
-  Support/
-  Testing/
-  WordPress/             context, CLI/admin registrars
+  Drivers/               Memory, MySQL, Unavailable
+  Persistence/           migrations, PDO/$wpdb connections, GET_LOCK
+  Worker/                loop, identity, timeouts, site switching
+  WordPress/             context, CLI (`work|status|workers|queues`), admin
 ```
-
-## Job states
-
-Stored: `pending`, `reserved`, `completed`, `failed`, `cancelled`.
-
-`running` is derived: reserved + unexpired lease.
-
-Transitions: see `JobStateMachine`.
 
 ## Driver operations
 
-See [ADR-005](adr/005-queue-driver-contract.md). `MemoryDriver` implements the contract for tests. Production MySQL is Phase 2.
+See [ADR-005](adr/005-queue-driver-contract.md) and [ADR-011](adr/011-atomic-mysql-reservation.md).
 
 ## Schema
 
-`fuzeowp/queue` owns schema versioning (`fuzeo_queue_schema_version` at network level). Baseline migration version 1 records ownership and creates no queue tables.
+Version 2 creates `{prefix}fuzeo_queue_jobs`, `_workers`, and `_meta`. See [ADR-010](adr/010-mysql-queue-schema.md).
