@@ -28,9 +28,11 @@ final class Phase6TablesMigration implements Migration
         $batches = Schema::quoteTable($this->connection->prefix(), Schema::BATCHES);
         $members = Schema::quoteTable($this->connection->prefix(), Schema::BATCH_MEMBERS);
 
-        $this->connection->execute(
-            'ALTER TABLE ' . $jobs . ' ADD COLUMN `cancel_requested` TINYINT(1) NOT NULL DEFAULT 0'
-        );
+        if (!Schema::hasColumn($this->connection, Schema::JOBS, 'cancel_requested')) {
+            $this->connection->execute(
+                'ALTER TABLE ' . $jobs . ' ADD COLUMN `cancel_requested` TINYINT(1) NOT NULL DEFAULT 0'
+            );
+        }
 
         $this->connection->execute(
             'CREATE TABLE IF NOT EXISTS ' . $chains . ' (

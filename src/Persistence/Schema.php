@@ -37,4 +37,45 @@ final class Schema
 
         return '`' . $prefix . $name . '`';
     }
+
+    public static function hasColumn(Connection $connection, string $table, string $column): bool
+    {
+        self::assertTable($table);
+        self::assertIdentifier($column, 'column');
+        $row = $connection->selectOne(
+            'SELECT 1 AS ok FROM information_schema.COLUMNS
+             WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?',
+            [$connection->prefix() . $table, $column]
+        );
+
+        return $row !== null;
+    }
+
+    public static function hasIndex(Connection $connection, string $table, string $index): bool
+    {
+        self::assertTable($table);
+        self::assertIdentifier($index, 'index');
+        $row = $connection->selectOne(
+            'SELECT 1 AS ok FROM information_schema.STATISTICS
+             WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND INDEX_NAME = ?
+             LIMIT 1',
+            [$connection->prefix() . $table, $index]
+        );
+
+        return $row !== null;
+    }
+
+    private static function assertTable(string $name): void
+    {
+        if (!preg_match('/^[a-z0-9_]+$/', $name)) {
+            throw new SchemaException('Invalid table name.');
+        }
+    }
+
+    private static function assertIdentifier(string $name, string $kind): void
+    {
+        if (!preg_match('/^[A-Za-z0-9_]+$/', $name)) {
+            throw new SchemaException('Invalid ' . $kind . ' name.');
+        }
+    }
 }

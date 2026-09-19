@@ -63,25 +63,29 @@ final class Phase8TablesMigration implements Migration
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
         );
 
-        $this->connection->execute(
-            'ALTER TABLE ' . $workers . '
-             ADD COLUMN `current_job_id` CHAR(26) NULL,
-             ADD COLUMN `runtime_generation` VARCHAR(64) NULL,
-             ADD COLUMN `recycle_reason` VARCHAR(64) NULL,
-             ADD COLUMN `recent_jobs` TEXT NULL'
-        );
+        if (!Schema::hasColumn($this->connection, Schema::WORKERS, 'current_job_id')) {
+            $this->connection->execute(
+                'ALTER TABLE ' . $workers . '
+                 ADD COLUMN `current_job_id` CHAR(26) NULL,
+                 ADD COLUMN `runtime_generation` VARCHAR(64) NULL,
+                 ADD COLUMN `recycle_reason` VARCHAR(64) NULL,
+                 ADD COLUMN `recent_jobs` TEXT NULL'
+            );
+        }
 
-        $this->connection->execute(
-            'ALTER TABLE ' . $jobs . ' ADD INDEX `lookup_created` (`state`, `created_at`)'
-        );
-        $this->connection->execute(
-            'ALTER TABLE ' . $jobs . ' ADD INDEX `lookup_origin_state` (`origin_package`, `state`, `created_at`)'
-        );
-        $this->connection->execute(
-            'ALTER TABLE ' . $jobs . ' ADD INDEX `lookup_site_state` (`site_id`, `state`, `created_at`)'
-        );
-        $this->connection->execute(
-            'ALTER TABLE ' . $jobs . ' ADD INDEX `lookup_type_state` (`job_type`, `state`, `created_at`)'
-        );
+        foreach (['lookup_created', 'lookup_origin_state', 'lookup_site_state', 'lookup_type_state'] as $index) {
+            if (Schema::hasIndex($this->connection, Schema::JOBS, $index)) {
+                continue;
+            }
+            $definition = match ($index) {
+                'lookup_created' => '(`state`, `created_at`)',
+                'lookup_origin_state' => '(`origin_package`, `state`, `created_at`)',
+                'lookup_site_state' => '(`site_id`, `state`, `created_at`)',
+                default => '(`job_type`, `state`, `created_at`)',
+            };
+            $this->connection->execute(
+                'ALTER TABLE ' . $jobs . ' ADD INDEX `' . $index . '` ' . $definition
+            );
+        }
     }
 }
