@@ -401,17 +401,27 @@ final class Coordinator
         \Fuzeo\Queue\WordPress\Rest\RestRegistrar::register();
     }
 
+    /**
+     * @return list<\Fuzeo\Queue\Persistence\Migration>
+     */
+    public static function packageMigrations(?Connection $connection = null): array
+    {
+        $connection ??= self::$connection;
+        $migrations = [new BaselineMigration($connection)];
+        if ($connection !== null) {
+            $migrations[] = new QueueTablesMigration($connection);
+            $migrations[] = new AttemptsMigration($connection);
+            $migrations[] = new Phase5TablesMigration($connection);
+            $migrations[] = new Phase6TablesMigration($connection);
+            $migrations[] = new Phase8TablesMigration($connection);
+        }
+
+        return $migrations;
+    }
+
     private static function runOwnedMigrations(QueueManager $manager): void
     {
-        $migrations = [new BaselineMigration(self::$connection)];
-        if (self::$connection !== null) {
-            $migrations[] = new QueueTablesMigration(self::$connection);
-            $migrations[] = new AttemptsMigration(self::$connection);
-            $migrations[] = new Phase5TablesMigration(self::$connection);
-            $migrations[] = new Phase6TablesMigration(self::$connection);
-            $migrations[] = new Phase8TablesMigration(self::$connection);
-        }
-        $result = $manager->migrations()->run($migrations);
+        $result = $manager->migrations()->run(self::packageMigrations(self::$connection));
         $current = (int) (self::kernel()['migrations_run'] ?? 0);
         self::kernelSet('migrations_run', $current + ($result->lockedOut ? 0 : 1));
     }

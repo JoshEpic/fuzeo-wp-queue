@@ -23,6 +23,7 @@ src/
   Persistence/           migrations, PDO/$wpdb connections, GET_LOCK
   Worker/                loop, identity, timeouts, site switching, handler availability
   Runtime/               coordinator, generation, resetter, process lifecycle
+  Deployment/            generation, restart/drain store, readiness
   WordPress/             context, CLI, Site Health, REST, admin, capabilities
   Metrics/               recorder, repositories, histograms
   Operations/            health, audit, dashboard services

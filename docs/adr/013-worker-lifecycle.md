@@ -6,9 +6,9 @@ HTTP request workers cannot outlive the request. Persistent CLI processes can le
 
 ## Decision
 
-`wp fuzeo-queue work` boots WordPress once, registers a worker row, loops (heartbeat → reserve → execute → ACK), recycles on memory/max-jobs/max-runtime after finishing the current job.
+`wp fuzeo-queue work` boots WordPress once, registers a worker row, loops (heartbeat → reserve → execute → ACK), recycles on memory/max-jobs/max-runtime/generation/restart/drain after finishing the current job.
 
-`pcntl` is recommended. SIGTERM finishes the current job. SIGKILL relies on leases.
+`pcntl` is recommended. SIGTERM finishes the current job. SIGKILL relies on leases. Process managers restart the OS process; Queue does not.
 
 Hooks: `fuzeo_queue_before_job`, `fuzeo_queue_after_job`, `fuzeo_queue_job_failed`, `fuzeo_queue_worker_stopping`, plus Phase 7 lifecycle hooks in [ADR-063](063-long-running-wordpress-runtime-model.md).
 

@@ -9,7 +9,9 @@ Worker and scheduler exits are normal. Supervisors should restart them.
 | Memory | `worker_memory` / `--memory` |
 | Max jobs | `worker_max_jobs` / `--max-jobs` |
 | Max runtime | `worker_max_runtime` / `--max-runtime` |
-| Runtime generation | plugin/theme/package change (`generation_check_interval`) |
+| Runtime / deployment generation | plugin/theme/package/token change (`generation_check_interval`) |
+| Restart request | `wp fuzeo-queue restart` |
+| Drain | `wp fuzeo-queue drain` |
 | Context / transaction | `worker_recycle_on_context_error` |
 | SIGTERM / SIGINT | finish current job, then exit |
 
@@ -17,7 +19,9 @@ Suggested starting point: `--max-jobs=500 --max-runtime=3600 --memory=128M`.
 
 ## Runtime generation
 
-A SHA-256 of loaded Queue version, schema version, active plugins, network plugins, and theme. Workers compare periodically and exit so a new process loads new PHP. The current job finishes on the old code. This is not a full deployment orchestrator (Phase 9).
+A SHA-256 of loaded Queue version, schema version, active plugins, network plugins, theme, and optional `FUZEO_QUEUE_DEPLOYMENT_ID`. Workers compare periodically and exit so a new process loads new PHP. The current job finishes on the old code. See [deployments](deployments.md).
+
+Health (is Queue operational?) is not readiness (should this deployment accept work now?). Draining is an intentional operational state, not a generic critical failure.
 
 ## Site Health and dashboard
 

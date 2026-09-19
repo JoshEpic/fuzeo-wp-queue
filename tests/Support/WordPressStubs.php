@@ -346,6 +346,11 @@ if (!class_exists('WP_CLI')) {
         {
         }
 
+        public static function halt(int $code): void
+        {
+            unset($code);
+        }
+
         public static function error(string $message): void
         {
             throw new RuntimeException($message);

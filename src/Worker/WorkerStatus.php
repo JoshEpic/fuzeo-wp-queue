@@ -13,4 +13,5 @@ enum WorkerStatus: string
     case Stopping = 'stopping';
     case Stopped = 'stopped';
     case Unhealthy = 'unhealthy';
+    case Draining = 'draining';
 }

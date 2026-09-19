@@ -9,7 +9,7 @@ use Fuzeo\Queue\Persistence\SchemaOwner;
 /**
  * Lightweight fingerprint of loaded WordPress + Queue code. Recalculate periodically, not every tight loop tick.
  */
-final class RuntimeGeneration
+final class RuntimeGeneration implements GenerationSource
 {
     public function __construct(
         private readonly WordPressRuntime $wp,

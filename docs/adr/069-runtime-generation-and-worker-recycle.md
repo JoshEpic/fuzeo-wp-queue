@@ -24,6 +24,6 @@ Old process exits cleanly. Supervisor starts a new process.
 
 No schema v6. Redis worker hashes may store generation; MySQL worker rows keep existing columns.
 
-## Phase 8/9
+## Phase 9
 
-Phase 9 can stamp generation on jobs. Phase 8 can show stale workers.
+Phase 9 adds `DeploymentGeneration`, restart/drain tokens, and process-manager docs. File copies without option or token changes still wait for max-jobs/runtime unless `FUZEO_QUEUE_DEPLOYMENT_ID` changes.

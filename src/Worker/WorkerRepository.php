@@ -27,8 +27,8 @@ final class WorkerRepository implements WorkerStore
         $this->connection->execute(
             'INSERT INTO ' . $this->table() . ' (
                 worker_id, hostname, pid, started_at, last_heartbeat_at, queues, status,
-                memory_bytes, processed_count, runtime_version
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                memory_bytes, processed_count, runtime_version, runtime_generation
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
             [
                 $identity->workerId,
                 $identity->hostname,
@@ -40,24 +40,32 @@ final class WorkerRepository implements WorkerStore
                 memory_get_usage(true),
                 0,
                 $identity->runtimeVersion,
+                $identity->deploymentGeneration !== '' ? $identity->deploymentGeneration : $identity->runtimeGeneration,
             ]
         );
     }
 
-    public function heartbeat(string $workerId, int $processedCount, WorkerStatus $status): void
+    public function heartbeat(string $workerId, int $processedCount, WorkerStatus $status, string $recycleReason = '', string $generation = ''): void
     {
-        $this->connection->execute(
-            'UPDATE ' . $this->table() . '
-             SET last_heartbeat_at = ?, memory_bytes = ?, processed_count = ?, status = ?
-             WHERE worker_id = ?',
-            [
-                $this->date($this->clock->now()),
-                memory_get_usage(true),
-                $processedCount,
-                $status->value,
-                $workerId,
-            ]
-        );
+        $sql = 'UPDATE ' . $this->table() . '
+             SET last_heartbeat_at = ?, memory_bytes = ?, processed_count = ?, status = ?';
+        $params = [
+            $this->date($this->clock->now()),
+            memory_get_usage(true),
+            $processedCount,
+            $status->value,
+        ];
+        if ($recycleReason !== '') {
+            $sql .= ', recycle_reason = ?';
+            $params[] = $recycleReason;
+        }
+        if ($generation !== '') {
+            $sql .= ', runtime_generation = ?';
+            $params[] = $generation;
+        }
+        $sql .= ' WHERE worker_id = ?';
+        $params[] = $workerId;
+        $this->connection->execute($sql, $params);
     }
 
     public function stop(string $workerId): void

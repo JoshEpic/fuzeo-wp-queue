@@ -123,6 +123,16 @@ final class SiteHealth
             }
         }
         if ($pending > 0 && $alive === 0) {
+            if (Coordinator::isBooted()) {
+                $snap = Coordinator::get()->deployment()->snapshot();
+                $now = new \DateTimeImmutable('now', new \DateTimeZone('UTC'));
+                if ($snap->isDraining() || $snap->isMaintenanceActive($now)) {
+                    return $this->result(
+                        'recommended',
+                        'Jobs are waiting while Fuzeo Queue is draining or in deployment maintenance. This is an intentional operational state.'
+                    );
+                }
+            }
             $status = $pending >= $this->backlogCritical ? 'critical' : 'recommended';
 
             return $this->result($status, 'Jobs are waiting, but no active Fuzeo Queue worker is detected.');
@@ -142,10 +152,14 @@ final class SiteHealth
      */
     public function testGeneration(): array
     {
+        $token = Coordinator::isBooted() ? Coordinator::get()->config()->deploymentId : '';
+        $extra = $token !== '' ? ' Explicit deployment token is configured.' : '';
+
         return $this->result(
             'good',
             'Current runtime generation ' . substr($this->generation->current(), 0, 12)
-            . '. Workers recycle when plugins, themes, or the Queue package change.'
+            . '. Workers recycle when plugins, themes, the Queue package, or the deployment token change.'
+            . $extra
         );
     }
 

@@ -97,6 +97,31 @@ final class AdminPage
         if (!empty($data['falling_behind'])) {
             echo '<p>Dispatch volume is greater than processing volume.</p>';
         }
+        $deploy = Coordinator::get()->operations()->deploymentStatus($operator);
+        $state = is_array($deploy['state'] ?? null) ? $deploy['state'] : [];
+        $gen = is_array($deploy['generation'] ?? null) ? $deploy['generation'] : [];
+        echo '<section aria-labelledby="fq-deploy"><h2 id="fq-deploy">Deployment</h2>';
+        echo '<p>Loaded package ' . esc_html((string) ($gen['loaded'] ?? '')) . ' (series ' . esc_html((string) ($gen['compatibility_series'] ?? '')) . ').';
+        echo ' Deployment generation <code>' . esc_html(substr((string) ($gen['deployment_generation'] ?? ''), 0, 12)) . '</code>.</p>';
+        if (!empty($state['draining'])) {
+            echo '<p>Fleet is draining. Workers are not reserving new jobs.</p>';
+        }
+        if (!empty($state['maintenance'])) {
+            echo '<p>Deployment maintenance is active (' . esc_html((string) ($state['maintenance_reason'] ?? '')) . ').</p>';
+        }
+        if (!empty($deploy['no_process_manager']) && !empty($state['restart_generation'])) {
+            echo '<div class="notice notice-warning"><p>A recycle was requested, but no replacement worker appeared. Configure a process manager (Supervisor, systemd, or a container restart policy).</p></div>';
+        }
+        echo '<p>Fuzeo Queue will request active workers and schedulers to exit after current work. Your process manager is responsible for starting replacements.</p>';
+        echo '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '">';
+        echo '<input type="hidden" name="action" value="fuzeo_queue_restart" />';
+        wp_nonce_field('fuzeo_queue_restart');
+        echo '<button class="button" type="submit">Request worker recycle</button></form> ';
+        echo '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '" style="display:inline">';
+        echo '<input type="hidden" name="action" value="fuzeo_queue_drain" />';
+        wp_nonce_field('fuzeo_queue_drain');
+        echo '<button class="button" type="submit">Request drain</button></form>';
+        echo '</section>';
     }
 
     private static function queues(Operator $operator): void
@@ -165,22 +190,62 @@ final class AdminPage
     {
         $rows = Coordinator::get()->operations()->workers($operator);
         echo '<table class="widefat striped"><caption>Workers</caption><thead><tr>';
-        echo '<th scope="col">ID</th><th scope="col">Host</th><th scope="col">PID</th><th scope="col">Status</th><th scope="col">Heartbeat age</th><th scope="col">Memory</th><th scope="col">Processed</th>';
+        echo '<th scope="col">ID</th><th scope="col">Host</th><th scope="col">PID</th><th scope="col">Status</th><th scope="col">Version</th><th scope="col">Generation</th><th scope="col">Heartbeat age</th><th scope="col">Memory</th><th scope="col">Processed</th>';
         echo '</tr></thead><tbody>';
         if ($rows === []) {
-            echo '<tr><td colspan="7">No workers have registered. Start <code>wp fuzeo-queue work</code>.</td></tr>';
+            echo '<tr><td colspan="9">No workers have registered. Start <code>wp fuzeo-queue work</code>.</td></tr>';
         }
         foreach ($rows as $row) {
             echo '<tr><td><code>' . esc_html((string) $row['worker_id']) . '</code></td>';
             echo '<td>' . esc_html((string) $row['hostname']) . '</td>';
             echo '<td>' . esc_html((string) $row['pid']) . '</td>';
             echo '<td>' . esc_html((string) $row['health']) . '</td>';
+            echo '<td>' . esc_html((string) ($row['runtime_version'] ?? '')) . '</td>';
+            echo '<td><code>' . esc_html(substr((string) ($row['deployment_generation'] ?? $row['runtime_generation'] ?? ''), 0, 12)) . '</code></td>';
             echo '<td>' . esc_html((string) ($row['heartbeat_age_seconds'] ?? '—')) . '</td>';
             echo '<td>' . esc_html((string) $row['memory_bytes']) . '</td>';
             echo '<td>' . esc_html((string) $row['processed_count']) . '</td></tr>';
         }
         echo '</tbody></table>';
-        echo '<p>Process restart is not available from this dashboard.</p>';
+        $deploy = Coordinator::get()->operations()->deploymentStatus($operator);
+        echo '<h2>Fleet by generation</h2><ul>';
+        $fleet = is_array($deploy['fleet'] ?? null) ? $deploy['fleet'] : [];
+        if ($fleet === []) {
+            echo '<li>No live processes grouped yet.</li>';
+        }
+        foreach ($fleet as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            echo '<li>' . esc_html((string) ($row['runtime_version'] ?? '')) . ' / '
+                . esc_html(substr((string) ($row['generation'] ?? ''), 0, 12)) . ': '
+                . esc_html((string) ($row['workers'] ?? 0)) . ' worker(s)</li>';
+        }
+        echo '</ul>';
+        $stale = is_array($deploy['stale_processes'] ?? null) ? $deploy['stale_processes'] : [];
+        if ($stale !== []) {
+            echo '<p>Stale (old generation) processes:</p><ul>';
+            foreach ($stale as $row) {
+                if (!is_array($row)) {
+                    continue;
+                }
+                echo '<li><code>' . esc_html((string) ($row['worker_id'] ?? '')) . '</code> '
+                    . esc_html((string) ($row['runtime_version'] ?? '')) . '</li>';
+            }
+            echo '</ul>';
+        }
+        $progress = Coordinator::get()->operations()->drainProgress();
+        if (!empty($progress['draining'])) {
+            echo '<p>Draining. Elapsed ' . esc_html((string) ($progress['elapsed_seconds'] ?? 0))
+                . 's. Reserved jobs: ' . esc_html((string) ($progress['reserved'] ?? 0)) . '. Backlog: '
+                . esc_html((string) ($progress['pending'] ?? 0)) . '.</p>';
+            echo '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '">';
+            echo '<input type="hidden" name="action" value="fuzeo_queue_drain" />';
+            echo '<input type="hidden" name="cancel" value="1" />';
+            wp_nonce_field('fuzeo_queue_drain');
+            echo '<button class="button" type="submit">Cancel drain</button></form>';
+        }
+        echo '<p>Fuzeo Queue requests recycle; it does not restart OS processes.</p>';
     }
 
     private static function schedules(Operator $operator): void
@@ -245,6 +310,27 @@ final class AdminPage
             echo '<tr><th scope="row">' . esc_html((string) $key) . '</th><td>' . esc_html(is_bool($value) ? ($value ? 'true' : 'false') : (string) $value) . '</td></tr>';
         }
         echo '</tbody></table>';
+    }
+
+    public static function handleRestart(): void
+    {
+        check_admin_referer('fuzeo_queue_restart');
+        Coordinator::get()->operations()->requestRestart(self::operator());
+        wp_safe_redirect(wp_get_referer() ?: admin_url('admin.php?page=' . AdminRegistrar::MENU_SLUG));
+        exit;
+    }
+
+    public static function handleDrain(): void
+    {
+        check_admin_referer('fuzeo_queue_drain');
+        $ops = Coordinator::get()->operations();
+        if (isset($_POST['cancel'])) {
+            $ops->cancelDrain(self::operator());
+        } else {
+            $ops->requestDrain(self::operator());
+        }
+        wp_safe_redirect(wp_get_referer() ?: admin_url('admin.php?page=' . AdminRegistrar::MENU_SLUG));
+        exit;
     }
 
     public static function handleRetry(): void

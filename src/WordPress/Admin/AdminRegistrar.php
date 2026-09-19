@@ -65,6 +65,8 @@ final class AdminRegistrar
         }, 20);
         add_action('admin_enqueue_scripts', [AdminPage::class, 'enqueueAssets']);
         add_action('admin_post_fuzeo_queue_retry', [AdminPage::class, 'handleRetry']);
+        add_action('admin_post_fuzeo_queue_restart', [AdminPage::class, 'handleRestart']);
+        add_action('admin_post_fuzeo_queue_drain', [AdminPage::class, 'handleDrain']);
     }
 
     public static function registrationCount(): int

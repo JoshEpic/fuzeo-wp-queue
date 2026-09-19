@@ -11,7 +11,13 @@ interface WorkerStore
      */
     public function register(WorkerIdentity $identity, array $queues): void;
 
-    public function heartbeat(string $workerId, int $processedCount, WorkerStatus $status): void;
+    public function heartbeat(
+        string $workerId,
+        int $processedCount,
+        WorkerStatus $status,
+        string $recycleReason = '',
+        string $generation = '',
+    ): void;
 
     public function stop(string $workerId): void;
 

@@ -20,9 +20,9 @@ final class MysqlAdvisoryLock implements MigrationLock
         }
     }
 
-    public function acquire(int $timeoutSeconds = 30): bool
+    public function acquire(int $timeoutSeconds = 0): bool
     {
-        $wait = $timeoutSeconds > 0 ? $timeoutSeconds : $this->timeoutSeconds;
+        $wait = $timeoutSeconds >= 0 ? $timeoutSeconds : $this->timeoutSeconds;
         $row = $this->connection->selectOne('SELECT GET_LOCK(?, ?) AS `locked`', [$this->name, $wait]);
         $locked = $row['locked'] ?? 0;
         $this->held = (int) $locked === 1;

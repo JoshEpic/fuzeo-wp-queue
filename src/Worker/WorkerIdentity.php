@@ -16,11 +16,18 @@ final class WorkerIdentity
         public readonly \DateTimeImmutable $startedAt,
         public readonly string $runtimeVersion,
         public readonly string $runtimeGeneration = '',
+        public readonly string $deploymentGeneration = '',
+        public readonly string $restartGeneration = '',
+        public readonly int $schemaVersion = \Fuzeo\Queue\Persistence\SchemaOwner::CURRENT_VERSION,
     ) {
     }
 
-    public static function generate(?\DateTimeImmutable $startedAt = null, string $runtimeGeneration = ''): self
-    {
+    public static function generate(
+        ?\DateTimeImmutable $startedAt = null,
+        string $runtimeGeneration = '',
+        string $deploymentGeneration = '',
+        string $restartGeneration = '',
+    ): self {
         $host = gethostname();
         $pid = getmypid();
 
@@ -31,6 +38,8 @@ final class WorkerIdentity
             $startedAt ?? new \DateTimeImmutable('now', new \DateTimeZone('UTC')),
             PackageInfo::VERSION,
             $runtimeGeneration,
+            $deploymentGeneration !== '' ? $deploymentGeneration : $runtimeGeneration,
+            $restartGeneration,
         );
     }
 }

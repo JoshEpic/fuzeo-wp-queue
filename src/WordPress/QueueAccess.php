@@ -80,6 +80,11 @@ final class QueueAccess
             || $this->userCan(Capabilities::FALLBACK_NETWORK);
     }
 
+    public function isNetworkInstall(): bool
+    {
+        return $this->isMultisite();
+    }
+
     public function canAccess(ExecutionContext $context): bool
     {
         if ($context->scope === ExecutionScope::Network) {

@@ -17,4 +17,9 @@ enum RecycleReason: string
     case TransactionLeak = 'transaction_rolled_back';
     case Manual = 'manual';
     case CyclesComplete = 'cycles_complete';
+    case RestartRequested = 'restart_requested';
+    case Drain = 'drain';
+    case SchemaMismatch = 'schema_mismatch';
+    case RuntimeIncompatible = 'runtime_incompatible';
+    case Maintenance = 'maintenance';
 }

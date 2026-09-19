@@ -6,8 +6,15 @@ namespace Fuzeo\Queue\Operations;
 
 use Fuzeo\Queue\Contracts\Clock;
 use Fuzeo\Queue\Core\QueueManager;
+use Fuzeo\Queue\Deployment\CompatibilityVerdict;
+use Fuzeo\Queue\Deployment\ProcessExitCode;
+use Fuzeo\Queue\Deployment\ReadinessReason;
+use Fuzeo\Queue\Deployment\ReadinessReport;
+use Fuzeo\Queue\Deployment\RuntimeCompatibility;
 use Fuzeo\Queue\Drivers\FailureStore;
+use Fuzeo\Queue\Drivers\MySql\MySqlDriver;
 use Fuzeo\Queue\Drivers\ProvidesWorkerStore;
+use Fuzeo\Queue\Drivers\Redis\RedisDriver;
 use Fuzeo\Queue\Drivers\StatusAware;
 use Fuzeo\Queue\Exceptions\DriverException;
 use Fuzeo\Queue\Exceptions\UniqueConflictException;
@@ -27,10 +34,12 @@ use Fuzeo\Queue\Orchestration\BatchState;
 use Fuzeo\Queue\Orchestration\MemberStatus;
 use Fuzeo\Queue\Persistence\SchemaOwner;
 use Fuzeo\Queue\Redis\RedisScripts;
+use Fuzeo\Queue\Runtime\NativeWordPressRuntime;
 use Fuzeo\Queue\Runtime\PackageInfo;
 use Fuzeo\Queue\Runtime\RuntimeGeneration;
 use Fuzeo\Queue\Support\SecretRedactor;
 use Fuzeo\Queue\Support\SystemClock;
+use Fuzeo\Queue\Support\Ulid;
 use Fuzeo\Queue\Worker\WorkerStatus;
 
 final class Operations
@@ -123,6 +132,20 @@ final class Operations
         if (!$health->ok) {
             return new HealthReport(HealthStatus::Critical, [$health->message ?? 'Driver unavailable.']);
         }
+        $deploy = $this->manager->deployment()->snapshot();
+        $now = $this->clock->now();
+        $operational = 'normal';
+        if ($deploy->isMaintenanceActive($now)) {
+            $operational = 'maintenance';
+        } elseif ($deploy->isDraining()) {
+            $operational = 'draining';
+        } elseif (
+            $deploy->restartGeneration !== ''
+            && $deploy->restartRequestedAt !== null
+            && ($now->getTimestamp() - $deploy->restartRequestedAt->getTimestamp()) < 120
+        ) {
+            $operational = 'restarting';
+        }
         $reasons = [];
         $status = HealthStatus::Healthy;
         $lag = $this->catalog->oldestEligibleAgeSeconds(null, $siteId);
@@ -160,8 +183,12 @@ final class Operations
             }
         }
         if ($pending > 0 && $alive === 0) {
-            $status = $pending >= $this->thresholds->backlogCritical ? HealthStatus::Critical : HealthStatus::Degraded;
-            $reasons[] = 'Jobs are waiting, but no active Fuzeo Queue worker is detected.';
+            if ($operational === 'normal') {
+                $status = $pending >= $this->thresholds->backlogCritical ? HealthStatus::Critical : HealthStatus::Degraded;
+                $reasons[] = 'Jobs are waiting, but no active Fuzeo Queue worker is detected.';
+            } else {
+                $reasons[] = 'Jobs are waiting while the fleet is ' . $operational . '. This is not a queue corruption.';
+            }
         }
         if ($this->metrics->isDegraded()) {
             $reasons[] = 'Metrics storage is degraded.';
@@ -169,8 +196,14 @@ final class Operations
                 $status = HealthStatus::Degraded;
             }
         }
+        if ($operational !== 'normal') {
+            $reasons[] = 'Intentional operational state: ' . $operational . '.';
+            if ($status === HealthStatus::Critical) {
+                $status = HealthStatus::Degraded;
+            }
+        }
 
-        return new HealthReport($status, $reasons);
+        return new HealthReport($status, $reasons, 'queue', $operational);
     }
 
     /**
@@ -390,6 +423,7 @@ final class Operations
                 'worker_id' => (string) ($row['worker_id'] ?? ''),
                 'hostname' => (string) ($row['hostname'] ?? ''),
                 'pid' => (string) ($row['pid'] ?? ''),
+                'started_at' => (string) ($row['started_at'] ?? ''),
                 'queues' => (string) ($row['queues'] ?? ''),
                 'status' => $status,
                 'health' => $health,
@@ -399,6 +433,8 @@ final class Operations
                 'processed_count' => (int) ($row['processed_count'] ?? 0),
                 'current_job_id' => $row['current_job_id'] ?? null,
                 'runtime_generation' => $row['runtime_generation'] ?? null,
+                'deployment_generation' => $row['deployment_generation'] ?? ($row['runtime_generation'] ?? null),
+                'schema_version' => isset($row['schema_version']) ? (int) $row['schema_version'] : null,
                 'recycle_reason' => $row['recycle_reason'] ?? null,
                 'runtime_version' => (string) ($row['runtime_version'] ?? ''),
                 'driver' => $this->manager->config()->driver,
@@ -750,6 +786,7 @@ final class Operations
             'workers' => $this->workers(Operator::cli()),
             'scheduler' => $this->schedulerHealth(Operator::cli())->toArray(),
             'runtime_generation' => (new RuntimeGeneration($wp))->current(),
+            'deployment' => $this->deploymentStatus(Operator::cli()),
             'multisite' => $wp->isMultisite(),
             'object_cache_dropin' => $wp->objectCacheDropInPresent(),
             'metrics_degraded' => $this->metrics->isDegraded(),
@@ -780,6 +817,411 @@ final class Operations
         $this->audit($operator, 'audit', 'reconcile', 'queue', 'runtime', $operator->currentSiteId, 1);
 
         return $n;
+    }
+
+    public function assertDispatchAllowed(): void
+    {
+        $report = $this->readiness(Operator::cli());
+        if ($report->canDispatch) {
+            return;
+        }
+        throw new DriverException('Queue dispatch refused: ' . $report->reason);
+    }
+
+    public function compatibility(): CompatibilityVerdict
+    {
+        $driver = $this->manager->driver();
+        $health = $driver->health();
+        $kernel = is_array($GLOBALS['fuzeo_queue_kernel'] ?? null) ? $GLOBALS['fuzeo_queue_kernel'] : [];
+        $highest = '';
+        $candidates = is_array($kernel['candidates'] ?? null) ? $kernel['candidates'] : [];
+        foreach ($candidates as $row) {
+            if (is_array($row) && isset($row['version']) && is_string($row['version'])) {
+                if ($highest === '' || version_compare($row['version'], $highest, '>')) {
+                    $highest = $row['version'];
+                }
+            }
+        }
+        $storedSchema = SchemaOwner::CURRENT_VERSION;
+        $exact = false;
+        $enforceLua = false;
+        $storedLua = RedisScripts::VERSION;
+        if ($driver instanceof MySqlDriver) {
+            $exact = true;
+            $storedSchema = $this->manager->migrations()->currentVersion();
+        } elseif ($driver instanceof RedisDriver) {
+            $enforceLua = true;
+            $storedLua = $driver->storedLuaVersion();
+        }
+
+        return (new RuntimeCompatibility(
+            loadedSchema: SchemaOwner::CURRENT_VERSION,
+            storedSchema: $storedSchema,
+            targetSchema: SchemaOwner::CURRENT_VERSION,
+            loadedSeries: PackageInfo::COMPATIBILITY_SERIES,
+            requiredSeries: PackageInfo::COMPATIBILITY_SERIES,
+            loadedLua: RedisScripts::VERSION,
+            storedLua: $storedLua,
+            enforceLua: $enforceLua,
+            driverOk: $health->ok && $health->driver !== 'unavailable',
+            exactSchema: $exact,
+            state: $this->manager->deployment()->snapshot(),
+            now: $this->clock->now(),
+            loadedPackage: PackageInfo::VERSION,
+            highestCandidateVersion: $highest,
+        ))->evaluate();
+    }
+
+    public function readiness(Operator $operator): ReadinessReport
+    {
+        unset($operator);
+        $verdict = $this->compatibility();
+        $reason = $verdict->primaryReason;
+        $ready = $verdict->canReserve && $reason === ReadinessReason::Ready->value;
+        if ($verdict->canReserve && $verdict->canDispatch && $verdict->canBoot && !$verdict->mustMigrate) {
+            $ready = $reason === ReadinessReason::Ready->value || $reason === ReadinessReason::RestartRequested->value;
+        }
+        $exit = $ready ? ProcessExitCode::OK : ProcessExitCode::fromReadinessReason($reason);
+        $generation = $this->deploymentGeneration();
+
+        return new ReadinessReport(
+            $ready,
+            $reason,
+            $verdict->reasons,
+            $verdict->canDispatch,
+            $verdict->canReserve,
+            $exit,
+            [
+                'package_version' => PackageInfo::VERSION,
+                'loaded_class_version' => PackageInfo::VERSION,
+                'compatibility_series' => PackageInfo::COMPATIBILITY_SERIES,
+                'schema_version' => SchemaOwner::CURRENT_VERSION,
+                'lua_script_version' => RedisScripts::VERSION,
+                'deployment_generation' => $generation->current(),
+                'compatibility' => $verdict->toArray(),
+                'deployment' => $this->manager->deployment()->snapshot()->toArray($this->clock->now()),
+            ],
+        );
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function deploymentStatus(Operator $operator): array
+    {
+        unset($operator);
+        $generation = $this->deploymentGeneration();
+        $workers = $this->workers(Operator::cli());
+        $fleet = [];
+        $stale = [];
+        $current = $generation->current();
+        foreach ($workers as $worker) {
+            $gen = (string) ($worker['deployment_generation'] ?? $worker['runtime_generation'] ?? '');
+            $key = ($worker['runtime_version'] ?? '') . ':' . substr($gen, 0, 12);
+            if (!isset($fleet[$key])) {
+                $fleet[$key] = ['generation' => $gen, 'runtime_version' => $worker['runtime_version'] ?? '', 'workers' => 0];
+            }
+            $fleet[$key]['workers']++;
+            $health = (string) ($worker['health'] ?? '');
+            if ($gen !== '' && $gen !== $current && $health !== 'stopped') {
+                $stale[] = $worker;
+            }
+        }
+        $schedulers = $this->manager->schedules()->store()->schedulers();
+        $snap = $this->manager->deployment()->snapshot();
+        $aliveNew = 0;
+        foreach ($workers as $worker) {
+            $started = (string) ($worker['started_at'] ?? '');
+            $health = (string) ($worker['health'] ?? '');
+            if ($health === 'stopped' || $health === 'stale') {
+                continue;
+            }
+            if ($snap->restartRequestedAt === null || $started === '') {
+                $aliveNew++;
+                continue;
+            }
+            try {
+                $at = new \DateTimeImmutable($started);
+                if ($at->getTimestamp() >= $snap->restartRequestedAt->getTimestamp()) {
+                    $aliveNew++;
+                }
+            } catch (\Exception) {
+                $aliveNew++;
+            }
+        }
+
+        return [
+            'generation' => $generation->describe(),
+            'state' => $snap->toArray($this->clock->now()),
+            'readiness' => $this->readiness(Operator::cli())->toArray(),
+            'fleet' => array_values($fleet),
+            'stale_processes' => $stale,
+            'schedulers' => count($schedulers),
+            'replacements_online' => $aliveNew,
+            'expected_worker_count' => $this->manager->config()->expectedWorkerCount,
+            'no_process_manager' => $snap->restartRequestedAt !== null && $aliveNew === 0,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function requestRestart(Operator $operator): array
+    {
+        $operator->assertFleetManage();
+        $generation = Ulid::generate();
+        $this->manager->deployment()->requestRestart($generation, $this->clock->now());
+        $this->audit($operator, 'audit', 'restart.requested', 'deployment', $generation, $operator->currentSiteId, 1);
+        $this->recordEvent('worker.recycle_requested', 'deployment', $generation);
+        $workers = $this->livingWorkerCount();
+        $schedulers = count($this->manager->schedules()->store()->schedulers());
+
+        return [
+            'restart_generation' => $generation,
+            'workers_expected_to_recycle' => $workers,
+            'schedulers_expected_to_recycle' => $schedulers,
+            'note' => 'Fuzeo Queue requested a recycle. Replacement processes are started by your process manager, not by Queue.',
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function requestDrain(Operator $operator): array
+    {
+        $operator->assertFleetManage();
+        $generation = Ulid::generate();
+        $this->manager->deployment()->requestDrain($generation, $this->clock->now());
+        $this->audit($operator, 'audit', 'drain.requested', 'deployment', $generation, $operator->currentSiteId, 1);
+        $this->recordEvent('worker.drain_requested', 'deployment', $generation);
+
+        return [
+            'drain_generation' => $generation,
+            'requested_at' => $this->clock->now()->format(\DateTimeInterface::ATOM),
+            'note' => 'Workers will stop reserving new jobs. Active jobs are not killed.',
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function cancelDrain(Operator $operator): array
+    {
+        $operator->assertFleetManage();
+        $this->manager->deployment()->cancelDrain();
+        $this->audit($operator, 'audit', 'drain.cancelled', 'deployment', 'fleet', $operator->currentSiteId, 1);
+
+        return ['cancelled' => true];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function drainProgress(): array
+    {
+        $snap = $this->manager->deployment()->snapshot();
+        $active = [];
+        $driver = $this->manager->driver();
+        if ($driver instanceof ProvidesWorkerStore) {
+            foreach ($driver->workerStore()->all() as $row) {
+                $status = (string) ($row['status'] ?? '');
+                if (in_array($status, [WorkerStatus::Working->value, WorkerStatus::Running->value], true)) {
+                    $job = (string) ($row['current_job_id'] ?? '');
+                    $started = (string) ($row['started_at'] ?? '');
+                    $elapsed = 0;
+                    if ($started !== '') {
+                        try {
+                            $elapsed = max(0, $this->clock->now()->getTimestamp() - (new \DateTimeImmutable($started))->getTimestamp());
+                        } catch (\Exception) {
+                        }
+                    }
+                    $active[] = [
+                        'worker_id' => (string) ($row['worker_id'] ?? ''),
+                        'job_id' => $job,
+                        'status' => $status,
+                        'runtime_seconds' => $elapsed,
+                    ];
+                }
+            }
+        }
+        $reserved = 0;
+        if ($driver instanceof StatusAware) {
+            $counts = $driver->countsByState();
+            $reserved = (int) ($counts['reserved'] ?? 0);
+        }
+        $complete = $snap->isDraining() && $reserved === 0 && $active === [];
+        $elapsed = 0;
+        if ($snap->drainRequestedAt !== null) {
+            $elapsed = max(0, $this->clock->now()->getTimestamp() - $snap->drainRequestedAt->getTimestamp());
+        }
+
+        return [
+            'draining' => $snap->isDraining(),
+            'complete' => $complete,
+            'reserved' => $reserved,
+            'active' => $active,
+            'elapsed_seconds' => $elapsed,
+            'pending' => $this->pendingCount(),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function migrate(Operator $operator, bool $check = false): array
+    {
+        $operator->assertFleetManage();
+        $migrations = \Fuzeo\Queue\Runtime\Coordinator::packageMigrations();
+        $status = $this->manager->migrations()->status($migrations);
+        if ($check) {
+            return $status + ['check' => true];
+        }
+        $owner = Ulid::generate();
+        $ttl = max(30, $this->manager->config()->maintenanceLeaseSeconds);
+        $expires = $this->clock->now()->modify('+' . $ttl . ' seconds');
+        if (!$this->manager->deployment()->enterMaintenance($owner, $expires, 'schema_migration')) {
+            throw new DriverException('Another deployment transition owns maintenance state.');
+        }
+        $this->audit($operator, 'audit', 'migration.started', 'schema', (string) $status['current'], $operator->currentSiteId, 1);
+        try {
+            $result = $this->manager->migrations()->run($migrations);
+            if ($result->lockedOut) {
+                $this->audit($operator, 'audit', 'migration.locked_out', 'schema', (string) $status['current'], $operator->currentSiteId, 1);
+                throw new DriverException('Migration lock is held by another process.');
+            }
+            $this->audit($operator, 'audit', 'migration.completed', 'schema', (string) $result->toVersion, $operator->currentSiteId, 1, [
+                'from' => $result->fromVersion,
+                'to' => $result->toVersion,
+            ]);
+            $this->recordEvent('migration.completed', 'schema', (string) $result->toVersion);
+
+            return [
+                'from' => $result->fromVersion,
+                'to' => $result->toVersion,
+                'applied' => $result->applied,
+                'locked_out' => false,
+            ];
+        } catch (DriverException $exception) {
+            throw $exception;
+        } catch (\Throwable $exception) {
+            $this->audit($operator, 'audit', 'migration.failed', 'schema', (string) $status['current'], $operator->currentSiteId, 1);
+            throw new DriverException('Migration failed. Schema version was not advanced. ' . $exception->getMessage(), 0, $exception);
+        } finally {
+            $this->manager->deployment()->releaseMaintenance($owner);
+        }
+    }
+
+    public function deploymentGeneration(): \Fuzeo\Queue\Deployment\DeploymentGeneration
+    {
+        $wp = new NativeWordPressRuntime();
+
+        return new \Fuzeo\Queue\Deployment\DeploymentGeneration(
+            new RuntimeGeneration($wp),
+            $this->manager->config()->deploymentId,
+        );
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function waitForRestart(int $timeoutSeconds, int $expected = 0): array
+    {
+        $deadline = time() + max(1, $timeoutSeconds);
+        $snap = $this->manager->deployment()->snapshot();
+        $oldGone = false;
+        $replacements = 0;
+        do {
+            $status = $this->deploymentStatus(Operator::cli());
+            $oldGone = $this->oldProcessesGone($snap);
+            $replacements = (int) $status['replacements_online'];
+            if ($oldGone && ($expected === 0 || $replacements >= $expected)) {
+                break;
+            }
+            usleep(200000);
+        } while (time() < $deadline);
+
+        return [
+            'old_processes_exited' => $oldGone,
+            'replacements_online' => $replacements,
+            'expected_worker_count' => $expected,
+            'no_process_manager' => $oldGone && $replacements === 0,
+            'timed_out' => !$oldGone || ($expected > 0 && $replacements < $expected),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function waitForDrain(int $timeoutSeconds): array
+    {
+        $deadline = time() + max(1, $timeoutSeconds);
+        $progress = $this->drainProgress();
+        while (time() < $deadline) {
+            $progress = $this->drainProgress();
+            if ($progress['complete']) {
+                return $progress + ['timed_out' => false];
+            }
+            usleep(200000);
+        }
+
+        return $progress + ['timed_out' => true];
+    }
+
+    private function livingWorkerCount(): int
+    {
+        $n = 0;
+        foreach ($this->workers(Operator::cli()) as $worker) {
+            $health = (string) ($worker['health'] ?? '');
+            if ($health !== 'stopped' && $health !== 'stale') {
+                $n++;
+            }
+        }
+
+        return $n;
+    }
+
+    private function pendingCount(): int
+    {
+        $n = 0;
+        foreach ($this->catalog->queueSnapshots(null) as $snapshot) {
+            $n += $snapshot->pending;
+        }
+
+        return $n;
+    }
+
+    private function oldProcessesGone(\Fuzeo\Queue\Deployment\DeploymentState $snap): bool
+    {
+        if ($snap->restartRequestedAt === null) {
+            return true;
+        }
+        $driver = $this->manager->driver();
+        if (!$driver instanceof ProvidesWorkerStore) {
+            return true;
+        }
+        foreach ($driver->workerStore()->all() as $row) {
+            $status = (string) ($row['status'] ?? '');
+            if ($status === WorkerStatus::Stopped->value) {
+                continue;
+            }
+            if ($driver->workerStore()->isStale($row, $this->thresholds->staleWorkerSeconds)) {
+                continue;
+            }
+            $started = (string) ($row['started_at'] ?? '');
+            if ($started === '') {
+                return false;
+            }
+            try {
+                $at = new \DateTimeImmutable($started);
+            } catch (\Exception) {
+                return false;
+            }
+            if ($at->getTimestamp() < $snap->restartRequestedAt->getTimestamp()) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**

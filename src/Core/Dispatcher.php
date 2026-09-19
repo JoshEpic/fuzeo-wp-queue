@@ -25,6 +25,7 @@ final class Dispatcher
         private readonly ?FakeQueue $fake = null,
         private readonly Clock $clock = new SystemClock(),
         private readonly ?\Fuzeo\Queue\Metrics\MetricRecorder $metrics = null,
+        private readonly ?QueueManager $manager = null,
     ) {
     }
 
@@ -35,6 +36,7 @@ final class Dispatcher
 
     public function dispatch(Job $job, ?DispatchOptions $options = null): DispatchResult
     {
+        $this->manager?->operations()->assertDispatchAllowed();
         $options ??= new DispatchOptions(queue: $this->config->defaultQueue);
         if ($options->queue === null) {
             $options = $options->withQueue($this->config->defaultQueue);
@@ -56,6 +58,7 @@ final class Dispatcher
             $options = $options->withQueue($this->config->defaultQueue);
         }
         $envelope = $this->factory->makeRegistered($jobType, $payload, $options);
+        $this->manager?->operations()->assertDispatchAllowed();
         $enqueued = $this->driver->enqueue($envelope);
         $this->afterEnqueue($enqueued);
 

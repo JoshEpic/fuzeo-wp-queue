@@ -121,11 +121,52 @@ final class RestRegistrar
         });
         self::route('/diagnostics', $get, static fn () => self::ops()->diagnostics(self::operator()));
         self::route('/health', $get, static fn ($req) => self::ops()->queueHealth(self::operator(), self::site($req))->toArray());
+        self::route('/ready', $get, static fn () => self::ops()->readiness(self::operator())->toArray());
+        self::route('/operations/deployment', $get, static fn () => self::ops()->deploymentStatus(self::operator()));
+        self::routeWrite('/operations/restart', static fn () => self::ops()->requestRestart(self::operator()));
+        self::routeWrite('/operations/drain', static function ($req) {
+            return self::bool($req, 'cancel')
+                ? self::ops()->cancelDrain(self::operator())
+                : self::ops()->requestDrain(self::operator());
+        });
+        self::route('/operations/drain', $get, static fn () => self::ops()->drainProgress());
         self::route('/reconcile', $write, static function (): array {
             $n = self::ops()->reconcile(self::operator());
 
             return ['reconciled' => $n];
         });
+    }
+
+    /**
+     * @param callable(object): mixed $callback
+     */
+    private static function routeWrite(string $path, callable $callback): void
+    {
+        if (!function_exists('register_rest_route')) {
+            return;
+        }
+        register_rest_route(self::NAMESPACE, $path, [
+            'methods' => ['POST'],
+            'permission_callback' => static function (): bool {
+                $access = new QueueAccess();
+                if ($access->isNetworkInstall()) {
+                    return $access->canManageNetwork();
+                }
+
+                return $access->canManageSite(function_exists('get_current_blog_id') ? (int) get_current_blog_id() : 1);
+            },
+            'callback' => static function ($request) use ($callback) {
+                try {
+                    $data = $callback($request);
+
+                    return rest_ensure_response($data);
+                } catch (AccessDenied $exception) {
+                    return new \WP_Error('fuzeo_queue_forbidden', $exception->getMessage(), ['status' => 403]);
+                } catch (DriverException $exception) {
+                    return new \WP_Error('fuzeo_queue_error', $exception->getMessage(), ['status' => 400]);
+                }
+            },
+        ]);
     }
 
     /**

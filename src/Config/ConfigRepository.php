@@ -119,6 +119,9 @@ final class ConfigRepository
             'FUZEO_QUEUE_HEALTH_LAG_CRITICAL_SECONDS' => 'health_lag_critical_seconds',
             'FUZEO_QUEUE_HEALTH_DEAD_DEGRADED' => 'health_dead_degraded',
             'FUZEO_QUEUE_HEALTH_DEAD_CRITICAL' => 'health_dead_critical',
+            'FUZEO_QUEUE_DEPLOYMENT_ID' => 'deployment_id',
+            'FUZEO_QUEUE_EXPECTED_WORKER_COUNT' => 'expected_worker_count',
+            'FUZEO_QUEUE_MAINTENANCE_LEASE_SECONDS' => 'maintenance_lease_seconds',
         ];
 
         $values = [];

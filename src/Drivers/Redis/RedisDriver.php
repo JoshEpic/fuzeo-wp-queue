@@ -93,7 +93,17 @@ final class RedisDriver implements QueueDriver, FailureStore, ReliableAcknowledg
         $this->schedules = new RedisScheduleStore($redis, $this->keys, $clock);
         $this->orchestration = new RedisOrchestrationStore($redis, $this->keys, $clock);
         $this->assertVersion();
-        $this->redis->command('HSET', [$this->keys->meta(), 'driver', 'redis', 'package', 'fuzeowp/queue', 'schema_version', (string) \Fuzeo\Queue\Persistence\SchemaOwner::CURRENT_VERSION]);
+        $this->redis->command('HSET', [
+            $this->keys->meta(),
+            'driver',
+            'redis',
+            'package',
+            'fuzeowp/queue',
+            'schema_version',
+            (string) \Fuzeo\Queue\Persistence\SchemaOwner::CURRENT_VERSION,
+            'lua_script_version',
+            RedisScripts::VERSION,
+        ]);
     }
 
     public function redis(): RedisClient
@@ -202,6 +212,7 @@ final class RedisDriver implements QueueDriver, FailureStore, ReliableAcknowledg
 
     public function reserve(ReserveRequest $request): ?Reservation
     {
+        $this->requireLuaCompatible();
         $now = $this->clock->now()->getTimestamp();
         $lease = $now + $request->leaseSeconds;
         $token = ReservationToken::generate();
@@ -565,6 +576,29 @@ final class RedisDriver implements QueueDriver, FailureStore, ReliableAcknowledg
         }
 
         return $count;
+    }
+
+    public function storedLuaVersion(): string
+    {
+        $value = $this->redis->command('HGET', [$this->keys->meta(), 'lua_script_version']);
+        if (!is_string($value) || $value === '') {
+            $this->redis->command('HSET', [$this->keys->meta(), 'lua_script_version', RedisScripts::VERSION]);
+
+            return RedisScripts::VERSION;
+        }
+
+        return $value;
+    }
+
+    public function requireLuaCompatible(): void
+    {
+        $stored = $this->storedLuaVersion();
+        if ($stored !== RedisScripts::VERSION) {
+            throw new DriverException(
+                'Redis Lua script version is ' . $stored . '; this runtime requires ' . RedisScripts::VERSION
+                . '. Recycle workers after deploying a compatible fuzeowp/queue release.'
+            );
+        }
     }
 
     public function health(): DriverHealth

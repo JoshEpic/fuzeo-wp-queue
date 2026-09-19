@@ -51,5 +51,8 @@ Precedence, highest first:
 | `health_lag_critical_seconds` | `FUZEO_QUEUE_HEALTH_LAG_CRITICAL_SECONDS` | `300` |
 | `health_dead_degraded` | `FUZEO_QUEUE_HEALTH_DEAD_DEGRADED` | `10` |
 | `health_dead_critical` | `FUZEO_QUEUE_HEALTH_DEAD_CRITICAL` | `100` |
+| `deployment_id` | `FUZEO_QUEUE_DEPLOYMENT_ID` | empty |
+| `expected_worker_count` | `FUZEO_QUEUE_EXPECTED_WORKER_COUNT` | `0` |
+| `maintenance_lease_seconds` | `FUZEO_QUEUE_MAINTENANCE_LEASE_SECONDS` | `300` |
 
 Drivers: `mysql`, `redis` (PhpRedis), `memory` (tests), `unavailable` (fail closed), plus `Queue::fake()`. Switching drivers does not migrate jobs, schedules, uniqueness claims, or idempotency records. See [Redis](redis.md) and [ADR-050](adr/050-driver-switching-with-scheduler-uniqueness-state.md).

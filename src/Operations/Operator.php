@@ -80,6 +80,17 @@ final class Operator
         }
     }
 
+    public function assertFleetManage(): void
+    {
+        if ($this->cli) {
+            return;
+        }
+        if ($this->access->isNetworkInstall() && !$this->access->canManageNetwork()) {
+            throw new AccessDenied('Network manage permission is required to control the worker fleet.');
+        }
+        $this->assertManage($this->currentSiteId);
+    }
+
     public function canPayload(int $siteId): bool
     {
         return $this->cli || $this->access->canViewPayload($siteId);

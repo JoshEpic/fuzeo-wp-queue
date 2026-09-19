@@ -6,7 +6,7 @@ namespace Fuzeo\Queue\Runtime;
 
 final class PackageInfo
 {
-    public const VERSION = '0.8.0';
+    public const VERSION = '0.9.0';
 
     /**
      * Runtime compatibility epoch. Incompatible bundled copies must not share a runtime.

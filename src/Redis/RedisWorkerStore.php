@@ -35,13 +35,22 @@ final class RedisWorkerStore implements WorkerStore
             'memory_bytes' => (string) memory_get_usage(true),
             'processed_count' => '0',
             'runtime_version' => $identity->runtimeVersion !== '' ? $identity->runtimeVersion : PackageInfo::VERSION,
+            'runtime_generation' => $identity->runtimeGeneration,
+            'deployment_generation' => $identity->deploymentGeneration !== '' ? $identity->deploymentGeneration : $identity->runtimeGeneration,
+            'schema_version' => (string) $identity->schemaVersion,
+            'restart_generation' => $identity->restartGeneration,
         ]);
         $this->redis->command('SADD', [$this->keys->workers(), $identity->workerId]);
     }
 
-    public function heartbeat(string $workerId, int $processedCount, WorkerStatus $status): void
-    {
-        $this->redis->command('HSET', [
+    public function heartbeat(
+        string $workerId,
+        int $processedCount,
+        WorkerStatus $status,
+        string $recycleReason = '',
+        string $generation = '',
+    ): void {
+        $fields = [
             $this->keys->worker($workerId),
             'last_heartbeat_at',
             Dates::toAtom($this->clock->now()),
@@ -51,7 +60,18 @@ final class RedisWorkerStore implements WorkerStore
             $status->value,
             'memory_bytes',
             (string) memory_get_usage(true),
-        ]);
+        ];
+        if ($recycleReason !== '') {
+            $fields[] = 'recycle_reason';
+            $fields[] = $recycleReason;
+        }
+        if ($generation !== '') {
+            $fields[] = 'runtime_generation';
+            $fields[] = $generation;
+            $fields[] = 'deployment_generation';
+            $fields[] = $generation;
+        }
+        $this->redis->command('HSET', $fields);
         $this->redis->command('EXPIRE', [$this->keys->worker($workerId), $this->ttlSeconds]);
     }
 

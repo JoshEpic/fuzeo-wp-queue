@@ -187,6 +187,11 @@ final class RedisKeys
         return $this->prefix . ':audit';
     }
 
+    public function deployment(): string
+    {
+        return $this->prefix . ':deploy';
+    }
+
     public function meta(): string
     {
         return $this->prefix . ':meta';

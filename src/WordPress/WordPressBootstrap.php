@@ -35,6 +35,24 @@ final class WordPressBootstrap
             add_filter('site_status_tests', [self::class, 'siteStatusTests']);
             add_filter('debug_information', [self::class, 'debugInformation']);
         }
+        if (function_exists('add_action')) {
+            add_action('activated_plugin', [self::class, 'onCodeChanged']);
+            add_action('deactivated_plugin', [self::class, 'onCodeChanged']);
+            add_action('switch_theme', [self::class, 'onCodeChanged']);
+            add_action('upgrader_process_complete', [self::class, 'onCodeChanged']);
+            add_action('update_site_option_active_sitewide_plugins', [self::class, 'onCodeChanged']);
+        }
+    }
+
+    public static function onCodeChanged(): void
+    {
+        if (!Coordinator::isBooted()) {
+            return;
+        }
+        try {
+            Coordinator::get()->operations()->requestRestart(\Fuzeo\Queue\Operations\Operator::cli());
+        } catch (\Throwable) {
+        }
     }
 
     /**

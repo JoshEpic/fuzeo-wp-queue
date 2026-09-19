@@ -58,6 +58,7 @@ final class QueueCommand
             \WP_CLI::log('Fuzeo Queue worker ' . $worker->identity()->workerId . ' listening on ' . implode(',', $options->queues));
         }
         $worker->run();
+        $this->halt($worker->exitCode());
     }
 
     /**
@@ -76,6 +77,7 @@ final class QueueCommand
             \WP_CLI::log('Fuzeo Queue scheduler ' . $loop->schedulerId() . ' running');
         }
         $loop->run();
+        $this->halt(\Fuzeo\Queue\Deployment\ProcessExitCode::fromReason($loop->recycleReason()));
     }
 
     /**
@@ -694,6 +696,136 @@ final class QueueCommand
     }
 
     /**
+     * Request workers and schedulers to recycle after current work.
+     *
+     * ## OPTIONS
+     *
+     * [--wait]
+     * : Wait until old processes exit.
+     *
+     * [--timeout=<seconds>]
+     * : Wait timeout. Default 60.
+     *
+     * [--format=<format>]
+     * : table or json.
+     *
+     * @param array<int, string> $args
+     * @param array<string, string> $assoc
+     */
+    public function restart(array $args, array $assoc): void
+    {
+        unset($args);
+        $ops = Coordinator::get()->operations();
+        $result = $ops->requestRestart(\Fuzeo\Queue\Operations\Operator::cli());
+        if (isset($assoc['wait'])) {
+            $timeout = isset($assoc['timeout']) && is_numeric($assoc['timeout']) ? (int) $assoc['timeout'] : 60;
+            $result = array_merge($result, $ops->waitForRestart($timeout, Coordinator::get()->config()->expectedWorkerCount));
+            if (!empty($result['no_process_manager'])) {
+                $result['warning'] = 'No replacement worker detected. Configure a process manager.';
+            }
+        }
+        $this->emit($result, $assoc);
+        if (!empty($result['timed_out'])) {
+            $this->halt(1);
+        }
+    }
+
+    /**
+     * Stop workers from reserving new jobs. Does not kill active PHP.
+     *
+     * ## OPTIONS
+     *
+     * [--wait]
+     * : Wait until reserved work finishes.
+     *
+     * [--timeout=<seconds>]
+     * : Wait timeout. Default 300.
+     *
+     * [--cancel]
+     * : Cancel an in-progress drain.
+     *
+     * [--format=<format>]
+     * : table or json.
+     *
+     * @param array<int, string> $args
+     * @param array<string, string> $assoc
+     */
+    public function drain(array $args, array $assoc): void
+    {
+        unset($args);
+        $ops = Coordinator::get()->operations();
+        if (isset($assoc['cancel'])) {
+            $this->emit($ops->cancelDrain(\Fuzeo\Queue\Operations\Operator::cli()), $assoc);
+
+            return;
+        }
+        $result = $ops->requestDrain(\Fuzeo\Queue\Operations\Operator::cli());
+        if (isset($assoc['wait'])) {
+            $timeout = isset($assoc['timeout']) && is_numeric($assoc['timeout']) ? (int) $assoc['timeout'] : 300;
+            $result = array_merge($result, $ops->waitForDrain($timeout));
+        } else {
+            $result = array_merge($result, $ops->drainProgress());
+        }
+        $this->emit($result, $assoc);
+        if (!empty($result['timed_out'])) {
+            $this->halt(1);
+        }
+    }
+
+    /**
+     * Process/deployment readiness. Exit 0 when the fleet may accept work.
+     *
+     * ## OPTIONS
+     *
+     * [--format=<format>]
+     * : table or json.
+     *
+     * @param array<int, string> $args
+     * @param array<string, string> $assoc
+     */
+    public function ready(array $args, array $assoc): void
+    {
+        unset($args);
+        $report = Coordinator::get()->operations()->readiness(\Fuzeo\Queue\Operations\Operator::cli());
+        $this->emit($report->toArray(), $assoc);
+        $this->halt($report->exitCode);
+    }
+
+    /**
+     * Apply Fuzeo Queue schema migrations owned by this package.
+     *
+     * ## OPTIONS
+     *
+     * [--check]
+     * : Report whether a migration is required without applying it.
+     *
+     * [--format=<format>]
+     * : table or json.
+     *
+     * @param array<int, string> $args
+     * @param array<string, string> $assoc
+     */
+    public function migrate(array $args, array $assoc): void
+    {
+        unset($args);
+        try {
+            $result = Coordinator::get()->operations()->migrate(
+                \Fuzeo\Queue\Operations\Operator::cli(),
+                isset($assoc['check'])
+            );
+        } catch (\Fuzeo\Queue\Exceptions\DriverException $exception) {
+            $this->error($exception->getMessage());
+            $this->halt(1);
+
+            return;
+        }
+        $this->emit($result, $assoc);
+        if (!empty($assoc['check']) && !empty($result['required'])) {
+            $this->halt(\Fuzeo\Queue\Deployment\ProcessExitCode::SCHEMA);
+        }
+    }
+
+    /**
      * Reconcile chain/batch progression after crashes.
      *
      * @param array<int, string> $args
@@ -704,6 +836,34 @@ final class QueueCommand
         unset($args, $assoc);
         $n = Coordinator::get()->orchestrator()->reconcile(100);
         $this->line('reconciled=' . $n);
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     * @param array<string, string> $assoc
+     */
+    private function emit(array $payload, array $assoc): void
+    {
+        if (isset($assoc['format']) && $assoc['format'] === 'json') {
+            $encoded = json_encode($payload, JSON_UNESCAPED_SLASHES);
+            $this->line(is_string($encoded) ? $encoded : '{}');
+
+            return;
+        }
+        foreach ($payload as $key => $value) {
+            if (is_array($value)) {
+                $encoded = json_encode($value, JSON_UNESCAPED_SLASHES);
+                $this->line($key . ': ' . (is_string($encoded) ? $encoded : ''));
+                continue;
+            }
+            if (is_bool($value)) {
+                $this->line($key . ': ' . ($value ? 'yes' : 'no'));
+                continue;
+            }
+            if (is_scalar($value) || $value === null) {
+                $this->line($key . ': ' . (string) $value);
+            }
+        }
     }
 
     /**
@@ -723,6 +883,13 @@ final class QueueCommand
             return;
         }
         echo $message . PHP_EOL;
+    }
+
+    private function halt(int $code): void
+    {
+        if (class_exists('WP_CLI')) {
+            \WP_CLI::halt($code);
+        }
     }
 
     private function error(string $message): void

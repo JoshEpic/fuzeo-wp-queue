@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Fuzeo\Queue\Runtime;
 
 use Fuzeo\Queue\Contracts\Clock;
+use Fuzeo\Queue\Deployment\DeploymentWatch;
 use Fuzeo\Queue\Support\SystemClock;
 use Fuzeo\Queue\Worker\WorkerOptions;
 
@@ -25,12 +26,13 @@ final class ProcessLifecycle
 
     public function __construct(
         private readonly WorkerOptions $options,
-        private readonly RuntimeGeneration $generation,
+        private readonly GenerationSource $generation,
         private readonly MemoryMonitor $memory,
         private readonly RuntimeLogger $logger = new NullLogger(),
         private readonly Clock $clock = new SystemClock(),
         ?string $bootGeneration = null,
         ?\DateTimeImmutable $startedAt = null,
+        private readonly ?DeploymentWatch $deployment = null,
     ) {
         $this->cachedGeneration = $bootGeneration ?? $this->generation->current();
         $this->startedAt = $startedAt ?? $this->clock->now();
@@ -68,6 +70,7 @@ final class ProcessLifecycle
             $this->jobsSinceGenerationCheck = 0;
             $this->refreshGeneration();
         }
+        $this->deployment?->inspect($this);
         if ($this->memory->exceeds($this->options->memoryBytes)) {
             $this->logger->log('runtime.memory_threshold', $this->memory->snapshot());
             $this->request(RecycleReason::Memory);
@@ -103,6 +106,10 @@ final class ProcessLifecycle
 
             return true;
         }
+        $this->deployment?->inspect($this);
+        if ($this->reason !== RecycleReason::None) {
+            return true;
+        }
 
         return false;
     }
@@ -117,6 +124,25 @@ final class ProcessLifecycle
             ]);
             $this->request(RecycleReason::GenerationChanged);
         }
+        $this->deployment?->inspect($this);
+    }
+
+    public function mayReserve(): bool
+    {
+        if ($this->reason !== RecycleReason::None) {
+            return false;
+        }
+        $this->deployment?->inspect($this);
+        if ($this->deployment !== null) {
+            return $this->deployment->mayReserve();
+        }
+
+        return true;
+    }
+
+    public function deployment(): ?DeploymentWatch
+    {
+        return $this->deployment;
     }
 
     public function startedAt(): \DateTimeImmutable

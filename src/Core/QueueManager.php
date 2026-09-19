@@ -17,6 +17,10 @@ use Fuzeo\Queue\Drivers\Redis\RedisDriver;
 use Fuzeo\Queue\Idempotency\Idempotency;
 use Fuzeo\Queue\Idempotency\IdempotencyStore;
 use Fuzeo\Queue\Idempotency\MemoryIdempotencyStore;
+use Fuzeo\Queue\Deployment\DeploymentStore;
+use Fuzeo\Queue\Deployment\MemoryDeploymentStore;
+use Fuzeo\Queue\Deployment\MysqlDeploymentStore;
+use Fuzeo\Queue\Deployment\RedisDeploymentStore;
 use Fuzeo\Queue\Inspection\EmptyJobCatalog;
 use Fuzeo\Queue\Inspection\JobCatalog;
 use Fuzeo\Queue\Jobs\EnvelopeFactory;
@@ -78,6 +82,8 @@ final class QueueManager
 
     private \Fuzeo\Queue\Operations\AuditStore $audit;
 
+    private DeploymentStore $deployment;
+
     private readonly SitePresence $sites;
 
     public function __construct(
@@ -95,6 +101,7 @@ final class QueueManager
         $this->recorder = new NullRecorder();
         $this->metricsRepository = new MemoryMetricsRepository();
         $this->audit = new MemoryAuditStore();
+        $this->deployment = new MemoryDeploymentStore();
         $this->rebuildObservability();
     }
 
@@ -178,6 +185,11 @@ final class QueueManager
         return $this->operations;
     }
 
+    public function deployment(): DeploymentStore
+    {
+        return $this->deployment;
+    }
+
     public function catalog(): JobCatalog
     {
         $driver = $this->driver();
@@ -251,7 +263,7 @@ final class QueueManager
             $this->config->defaultTimeoutSeconds,
         );
 
-        return new Dispatcher($factory, $driver, $this->config, $this->fake, $this->clock, $this->recorder);
+        return new Dispatcher($factory, $driver, $this->config, $this->fake, $this->clock, $this->recorder, $this);
     }
 
     private function rebuildControlPlane(): void
@@ -327,12 +339,15 @@ final class QueueManager
         if ($driver instanceof MySqlDriver) {
             $this->metricsRepository = new MysqlMetricsRepository($driver->connection());
             $this->audit = new MysqlAuditStore($driver->connection());
+            $this->deployment = new MysqlDeploymentStore($driver->connection(), clock: $this->clock);
         } elseif ($driver instanceof RedisDriver) {
             $this->metricsRepository = new RedisMetricsRepository($driver->redis(), $driver->keys(), $retention);
             $this->audit = new RedisAuditStore($driver->redis(), $driver->keys());
+            $this->deployment = new RedisDeploymentStore($driver->redis(), $driver->keys(), $this->clock);
         } else {
             $this->metricsRepository = new MemoryMetricsRepository();
             $this->audit = new MemoryAuditStore();
+            $this->deployment = new MemoryDeploymentStore(clock: $this->clock);
         }
         $inner = $this->config->metricsEnabled
             ? new RepositoryRecorder($this->metricsRepository, $this->clock, $retention->includeSiteDimension)

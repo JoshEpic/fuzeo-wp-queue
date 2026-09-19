@@ -27,6 +27,10 @@ use Fuzeo\Queue\Retry\AttemptRecord;
 use Fuzeo\Queue\Retry\FailureClassifier;
 use Fuzeo\Queue\Retry\RandomSource;
 use Fuzeo\Queue\Retry\SystemRandom;
+use Fuzeo\Queue\Deployment\DeploymentGeneration;
+use Fuzeo\Queue\Deployment\DeploymentWatch;
+use Fuzeo\Queue\Deployment\ProcessExitCode;
+use Fuzeo\Queue\Deployment\ReadinessReason;
 use Fuzeo\Queue\Runtime\ErrorLogLogger;
 use Fuzeo\Queue\Runtime\Hooks;
 use Fuzeo\Queue\Runtime\MemoryMonitor;
@@ -58,6 +62,8 @@ final class WorkerLoop
     private ?Reservation $activeReservation = null;
 
     private readonly ProcessLifecycle $lifecycle;
+
+    private int $startupExitCode = ProcessExitCode::OK;
 
     public function __construct(
         private readonly QueueDriver $driver,
@@ -98,9 +104,16 @@ final class WorkerLoop
     {
         $driver = $manager->driver();
         $wp = new NativeWordPressRuntime();
-        $generation = new RuntimeGeneration($wp);
-        $bootGeneration = $generation->current();
-        $identity ??= WorkerIdentity::generate($manager->clock()->now(), $bootGeneration);
+        $runtimeGeneration = new RuntimeGeneration($wp);
+        $deploymentGeneration = new DeploymentGeneration($runtimeGeneration, $manager->config()->deploymentId);
+        $watch = DeploymentWatch::boot($manager->deployment(), $deploymentGeneration, $manager->clock());
+        $bootGeneration = $deploymentGeneration->current();
+        $identity ??= WorkerIdentity::generate(
+            $manager->clock()->now(),
+            $runtimeGeneration->current(),
+            $bootGeneration,
+            $watch->bootRestartGeneration(),
+        );
         $workers = $driver instanceof ProvidesWorkerStore ? $driver->workerStore() : null;
         $connection = $driver instanceof \Fuzeo\Queue\Drivers\MySql\MySqlDriver ? $driver->connection() : null;
         $sites = function_exists('switch_to_blog')
@@ -125,12 +138,13 @@ final class WorkerLoop
             : null;
         $lifecycle = new ProcessLifecycle(
             $options,
-            $generation,
+            $deploymentGeneration,
             new MemoryMonitor($baseline->memoryBytes),
             $logger,
             $manager->clock(),
             $bootGeneration,
             $manager->clock()->now(),
+            $watch,
         );
 
         return new self(
@@ -173,11 +187,26 @@ final class WorkerLoop
         return $this->status;
     }
 
+    public function exitCode(): int
+    {
+        if ($this->startupExitCode !== ProcessExitCode::OK) {
+            return $this->startupExitCode;
+        }
+
+        return ProcessExitCode::fromReason($this->lifecycle->reason());
+    }
+
     public function run(?int $cycles = null): void
     {
         $this->maybeSetProcessTitle();
         $this->signals->install();
         $this->status = WorkerStatus::Starting;
+        if (!$this->assertStartup()) {
+            $this->status = WorkerStatus::Stopped;
+            Hooks::emit(Hooks::WORKER_STOPPED, $this->identity, $this->lifecycle->reason()->value);
+
+            return;
+        }
         $this->workers?->register($this->identity, $this->options->queues);
         $this->installFatalGuard();
         Hooks::emit(Hooks::WORKER_STARTED, $this->identity);
@@ -216,6 +245,9 @@ final class WorkerLoop
         $this->workers?->stop($this->identity->workerId);
         $this->status = WorkerStatus::Stopped;
         Hooks::emit(Hooks::WORKER_STOPPED, $this->identity, $this->lifecycle->reason()->value);
+        $this->operations?->recordEvent('worker.recycled', 'worker', $this->identity->workerId, [
+            'reason' => $this->lifecycle->reason()->value,
+        ]);
     }
 
     public function stop(): void
@@ -227,6 +259,18 @@ final class WorkerLoop
 
     private function reserveNext(): ?Reservation
     {
+        if (!$this->lifecycle->mayReserve()) {
+            if ($this->status !== WorkerStatus::Stopping && $this->status !== WorkerStatus::Stopped) {
+                $this->status = WorkerStatus::Draining;
+            }
+
+            return null;
+        }
+        if ($this->operations !== null && !$this->operations->compatibility()->canReserve) {
+            $this->status = WorkerStatus::Draining;
+
+            return null;
+        }
         $queues = $this->options->queues;
         $lastIndex = array_key_last($queues);
         foreach ($queues as $index => $queue) {
@@ -436,7 +480,13 @@ final class WorkerLoop
         $this->lastHeartbeatAt = $now;
         try {
             $this->connectionsHealthy();
-            $this->workers?->heartbeat($this->identity->workerId, $this->processed, $this->status);
+            $this->workers?->heartbeat(
+                $this->identity->workerId,
+                $this->processed,
+                $this->status,
+                $this->lifecycle->reason()->value,
+                $this->lifecycle->bootGeneration(),
+            );
         } catch (DriverException) {
             $this->backoffAfterReconnectFailure();
         }
@@ -497,6 +547,27 @@ final class WorkerLoop
         if ($this->options->sleepSeconds > 0) {
             sleep($this->options->sleepSeconds);
         }
+    }
+
+    private function assertStartup(): bool
+    {
+        if ($this->operations === null) {
+            return true;
+        }
+        $compat = $this->operations->compatibility();
+        if (!$compat->canBoot) {
+            $reason = match ($compat->primaryReason) {
+                ReadinessReason::SchemaMismatch->value, ReadinessReason::MigrationInProgress->value => RecycleReason::SchemaMismatch,
+                ReadinessReason::DriverUnavailable->value => RecycleReason::HealthFailure,
+                default => RecycleReason::RuntimeIncompatible,
+            };
+            $this->lifecycle->request($reason);
+            $this->startupExitCode = ProcessExitCode::fromReadinessReason($compat->primaryReason);
+
+            return false;
+        }
+
+        return true;
     }
 
     private function jobTimeout(Envelope $envelope): int

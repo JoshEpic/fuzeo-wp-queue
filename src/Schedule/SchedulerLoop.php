@@ -75,8 +75,17 @@ final class SchedulerLoop
             throw new ConfigurationException('The active driver does not support scheduling.');
         }
         $wp = new NativeWordPressRuntime();
-        $generation = new RuntimeGeneration($wp);
-        $boot = $generation->current();
+        $runtimeGeneration = new RuntimeGeneration($wp);
+        $deploymentGeneration = new \Fuzeo\Queue\Deployment\DeploymentGeneration(
+            $runtimeGeneration,
+            $manager->config()->deploymentId,
+        );
+        $watch = \Fuzeo\Queue\Deployment\DeploymentWatch::boot(
+            $manager->deployment(),
+            $deploymentGeneration,
+            $manager->clock(),
+        );
+        $boot = $deploymentGeneration->current();
         $logger = defined('WP_DEBUG') && WP_DEBUG ? new ErrorLogLogger() : new NullLogger();
         $connection = $driver instanceof MySqlDriver ? $driver->connection() : null;
         $redis = $driver instanceof RedisDriver ? $driver->redis() : null;
@@ -85,12 +94,13 @@ final class SchedulerLoop
             : null;
         $lifecycle = new ProcessLifecycle(
             $options,
-            $generation,
+            $deploymentGeneration,
             new MemoryMonitor(memory_get_usage(true)),
             $logger,
             $manager->clock(),
             $boot,
             $manager->clock()->now(),
+            $watch,
         );
 
         return new self(
@@ -134,6 +144,14 @@ final class SchedulerLoop
             }
             $cycle++;
             $this->assertSchemaCompatible();
+            if (!$this->lifecycle->mayReserve()) {
+                $this->heartbeat();
+                $this->lifecycle->afterJob();
+                if ($this->options->sleepSeconds > 0 && $cycles === null) {
+                    sleep($this->options->sleepSeconds);
+                }
+                continue;
+            }
             $this->heartbeat();
             try {
                 $this->processed += $this->scheduler->runDue();
@@ -164,6 +182,8 @@ final class SchedulerLoop
             'status' => $this->lifecycle->reason() === RecycleReason::None ? 'running' : 'stopping',
             'runtime_version' => PackageInfo::VERSION,
             'runtime_generation' => $this->lifecycle->bootGeneration(),
+            'deployment_generation' => $this->lifecycle->bootGeneration(),
+            'schema_version' => \Fuzeo\Queue\Persistence\SchemaOwner::CURRENT_VERSION,
             'recycle_reason' => $this->lifecycle->reason()->value,
             'memory_bytes' => memory_get_usage(true),
         ]);
@@ -171,8 +191,15 @@ final class SchedulerLoop
 
     private function assertSchemaCompatible(): void
     {
-        if ($this->driver instanceof MySqlDriver) {
-            $this->driver->requireCurrentSchema();
+        try {
+            if ($this->driver instanceof MySqlDriver) {
+                $this->driver->requireCurrentSchema();
+            }
+            if ($this->driver instanceof RedisDriver) {
+                $this->driver->requireLuaCompatible();
+            }
+        } catch (DriverException) {
+            $this->lifecycle->request(RecycleReason::SchemaMismatch);
         }
     }
 

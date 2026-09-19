@@ -1,0 +1,43 @@
+# Example Compose layout (not a package requirement)
+
+services:
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_DATABASE: wordpress
+      MYSQL_ROOT_PASSWORD: root
+  redis:
+    image: redis:7
+    command: ["redis-server", "--maxmemory-policy", "noeviction"]
+  web:
+    image: wordpress:php8.2-apache
+    volumes:
+      - app:/var/www/html
+    environment:
+      FUZEO_QUEUE_DEPLOYMENT_ID: "20260919-abc123"
+      FUZEO_QUEUE_DRIVER: mysql
+  worker:
+    image: wordpress:cli-php8.2
+    working_dir: /var/www/html
+    volumes:
+      - app:/var/www/html
+    command: wp fuzeo-queue work --queue=default
+    environment:
+      FUZEO_QUEUE_DEPLOYMENT_ID: "20260919-abc123"
+      FUZEO_QUEUE_DRIVER: mysql
+    stop_grace_period: 90s
+    depends_on: [mysql]
+  scheduler:
+    image: wordpress:cli-php8.2
+    working_dir: /var/www/html
+    volumes:
+      - app:/var/www/html
+    command: wp fuzeo-queue schedule-work
+    environment:
+      FUZEO_QUEUE_DEPLOYMENT_ID: "20260919-abc123"
+      FUZEO_QUEUE_DRIVER: mysql
+    stop_grace_period: 60s
+    depends_on: [mysql]
+
+volumes:
+  app:

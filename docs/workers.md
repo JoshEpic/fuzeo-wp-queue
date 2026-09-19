@@ -27,6 +27,10 @@ wp fuzeo-queue workers
 wp fuzeo-queue queues
 wp fuzeo-queue failed
 wp fuzeo-queue prune
+wp fuzeo-queue restart
+wp fuzeo-queue drain
+wp fuzeo-queue ready
+wp fuzeo-queue migrate --check
 ```
 
 Payloads are not printed.

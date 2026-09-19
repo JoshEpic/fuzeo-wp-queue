@@ -14,9 +14,11 @@ Reasons:
 WP_CLI::add_command('fuzeo-queue', QueueCommand::class);
 ```
 
-Subcommands: `work`, `schedule-work`, `schedule-run`, `schedules`, `unique`, `idempotency`, `status`, `workers`, `queues`, `jobs`, `failed`, `prune`, `chains`, `batches`, `cancel`, `reconcile`, `health`, `metrics`.
+Subcommands: `work`, `schedule-work`, `schedule-run`, `schedules`, `unique`, `idempotency`, `status`, `workers`, `queues`, `jobs`, `failed`, `prune`, `chains`, `batches`, `cancel`, `reconcile`, `health`, `metrics`, `restart`, `drain`, `ready`, `migrate`.
 
 `jobs` lists or shows jobs (`jobs show <id> --payload`). `health` and `metrics` read the operations layer (`--format=json` supported). `prune` also deletes aged metrics/audit rows.
+
+Deployment: `restart` writes a restart generation (workers finish current work and exit; your process manager starts replacements). `drain` stops new reservations. `ready` is automation-friendly (exit 0 only when the deployment may accept work). `migrate` applies package-owned schema migrations (`--check` reports whether work is required). `--format=json` is supported. See [deployments](deployments.md).
 
 `failed` lists dead/failed jobs without payloads. `failed show <id>` prints sanitized metadata and traces. `failed show <id> --payload` includes a redacted payload. `failed retry <id>` revives a dead job (same id, new attempt cycle) and refuses uniqueness conflicts. See [retries](retries.md), [schedules](schedules.md), and [unique-jobs](unique-jobs.md).
 

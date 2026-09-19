@@ -55,6 +55,9 @@ final class Config
         public readonly int $healthLagCriticalSeconds = 300,
         public readonly int $healthDeadDegraded = 10,
         public readonly int $healthDeadCritical = 100,
+        public readonly string $deploymentId = '',
+        public readonly int $expectedWorkerCount = 0,
+        public readonly int $maintenanceLeaseSeconds = 300,
     ) {
     }
 
@@ -105,6 +108,9 @@ final class Config
             healthLagCriticalSeconds: $this->int($values, 'health_lag_critical_seconds', $this->healthLagCriticalSeconds),
             healthDeadDegraded: $this->int($values, 'health_dead_degraded', $this->healthDeadDegraded),
             healthDeadCritical: $this->int($values, 'health_dead_critical', $this->healthDeadCritical),
+            deploymentId: $this->stringAllowEmpty($values, 'deployment_id', $this->deploymentId),
+            expectedWorkerCount: $this->int($values, 'expected_worker_count', $this->expectedWorkerCount),
+            maintenanceLeaseSeconds: $this->int($values, 'maintenance_lease_seconds', $this->maintenanceLeaseSeconds),
         );
     }
 

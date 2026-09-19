@@ -17,11 +17,11 @@ final class MigrationRunner
     /**
      * @param list<Migration> $migrations
      */
-    public function run(array $migrations): MigrationResult
+    public function run(array $migrations, int $lockTimeout = 0): MigrationResult
     {
         $this->assertSequential($migrations);
 
-        if (!$this->lock->acquire()) {
+        if (!$this->lock->acquire($lockTimeout)) {
             return new MigrationResult($this->repository->currentVersion(), $this->repository->currentVersion(), [], true);
         }
 
@@ -41,6 +41,46 @@ final class MigrationRunner
         } finally {
             $this->lock->release();
         }
+    }
+
+    public function currentVersion(): int
+    {
+        return $this->repository->currentVersion();
+    }
+
+    /**
+     * @param list<Migration> $migrations
+     */
+    public function pending(array $migrations): bool
+    {
+        $current = $this->repository->currentVersion();
+        foreach ($migrations as $migration) {
+            if ($migration->version() > $current) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param list<Migration> $migrations
+     * @return array{current: int, target: int, required: bool}
+     */
+    public function status(array $migrations): array
+    {
+        $target = $this->repository->currentVersion();
+        foreach ($migrations as $migration) {
+            if ($migration->version() > $target) {
+                $target = $migration->version();
+            }
+        }
+
+        return [
+            'current' => $this->repository->currentVersion(),
+            'target' => $target,
+            'required' => $this->pending($migrations),
+        ];
     }
 
     /**
