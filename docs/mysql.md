@@ -18,13 +18,17 @@ You can set it explicitly:
 define('FUZEO_QUEUE_DRIVER', 'mysql');
 ```
 
-Schema version 3 adds `{prefix}fuzeo_queue_attempts`. Version 2 created:
+Schema version 4 adds:
 
-- `{prefix}fuzeo_queue_jobs`
-- `{prefix}fuzeo_queue_workers`
-- `{prefix}fuzeo_queue_meta`
+- `{prefix}fuzeo_queue_unique`
+- `{prefix}fuzeo_queue_idempotency`
+- `{prefix}fuzeo_queue_schedules`
+- `{prefix}fuzeo_queue_schedule_claims`
+- `{prefix}fuzeo_queue_schedulers`
 
-Restart `wp fuzeo-queue work` after upgrading so old workers are not left mutating v3 rows with v0.2 `fail()` semantics.
+Version 3 added `{prefix}fuzeo_queue_attempts`. Version 2 created jobs, workers, and meta.
+
+Restart `wp fuzeo-queue work` and `wp fuzeo-queue schedule-work` after upgrading so old processes are not left against a newer schema.
 
 `{prefix}` is `$wpdb->base_prefix` so every site in a network shares one queue.
 

@@ -180,6 +180,35 @@ trait DriverConformanceCases
         self::assertSame(JobState::Failed, $this->store($driver)->job($reserved->envelope->jobId)->state);
     }
 
+    public function testUniqueDispatchIsAtomicAndReleasedOnComplete(): void
+    {
+        $driver = $this->boot();
+        Queue::register(\Fuzeo\Queue\Tests\Support\UniqueProductJob::class, new Origin('acme/shop', '1.0.0'), ProcessOrderHandler::class);
+        $first = Queue::dispatchResult(new \Fuzeo\Queue\Tests\Support\UniqueProductJob(1));
+        $second = Queue::dispatchResult(new \Fuzeo\Queue\Tests\Support\UniqueProductJob(1));
+        self::assertTrue($first->accepted);
+        self::assertFalse($second->accepted);
+        $reserved = $driver->reserve(new ReserveRequest('default', 'w', 30));
+        self::assertNotNull($reserved);
+        $driver->acknowledge($reserved);
+        $again = Queue::dispatchResult(new \Fuzeo\Queue\Tests\Support\UniqueProductJob(1));
+        self::assertTrue($again->accepted);
+    }
+
+    public function testIdempotencyBeginIsAtomic(): void
+    {
+        $this->boot();
+        $api = Queue::idempotency();
+        $a = $api->begin('op:1');
+        $b = $api->begin('op:1');
+        self::assertTrue($a->owned);
+        self::assertFalse($b->owned);
+        $api->complete((string) $a->ownerToken, ['n' => 1]);
+        $c = $api->begin('op:1');
+        self::assertFalse($c->owned);
+        self::assertSame(\Fuzeo\Queue\Idempotency\IdempotencyStatus::Completed, $c->status);
+    }
+
     protected function store(QueueDriver $driver): FailureStore
     {
         self::assertInstanceOf(FailureStore::class, $driver);

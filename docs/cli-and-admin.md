@@ -14,9 +14,11 @@ Reasons:
 WP_CLI::add_command('fuzeo-queue', QueueCommand::class);
 ```
 
-Subcommands: `work`, `status`, `workers`, `queues`, `failed`, `prune`.
+Subcommands: `work`, `schedule-work`, `schedule-run`, `schedules`, `unique`, `idempotency`, `status`, `workers`, `queues`, `failed`, `prune`.
 
-`failed` lists dead/failed jobs without payloads. `failed show <id>` prints sanitized metadata and traces. `failed show <id> --payload` includes a redacted payload. `failed retry <id>` revives a dead job (same id, new attempt cycle). See [retries](retries.md).
+`failed` lists dead/failed jobs without payloads. `failed show <id>` prints sanitized metadata and traces. `failed show <id> --payload` includes a redacted payload. `failed retry <id>` revives a dead job (same id, new attempt cycle) and refuses uniqueness conflicts. See [retries](retries.md), [schedules](schedules.md), and [unique-jobs](unique-jobs.md).
+
+`status` includes schema version and scheduler heartbeat count. Redis `unique` list is empty by design (no `KEYS`). There is no destructive idempotency reset command.
 
 ## Admin UI
 

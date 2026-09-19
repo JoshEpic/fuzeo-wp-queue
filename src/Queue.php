@@ -39,6 +39,11 @@ final class Queue
 
     public static function dispatch(Job $job): Envelope
     {
+        return self::runtime()->dispatcher()->dispatch($job)->envelope;
+    }
+
+    public static function dispatchResult(Job $job): \Fuzeo\Queue\Jobs\DispatchResult
+    {
         return self::runtime()->dispatcher()->dispatch($job);
     }
 
@@ -47,9 +52,19 @@ final class Queue
         return self::runtime()->dispatcher()->on($queue);
     }
 
-    public static function later(\DateTimeInterface|int $when, Job $job): Envelope
+    public static function later(\DateTimeInterface|int|string $when, Job $job): Envelope
     {
         return self::runtime()->dispatcher()->later($when, $job);
+    }
+
+    public static function schedule(): \Fuzeo\Queue\Schedule\ScheduleBook
+    {
+        return self::runtime()->schedules();
+    }
+
+    public static function idempotency(): \Fuzeo\Queue\Idempotency\Idempotency
+    {
+        return self::runtime()->idempotency();
     }
 
     public static function fake(): FakeQueue

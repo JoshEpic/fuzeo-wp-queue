@@ -12,6 +12,9 @@ use Fuzeo\Queue\Drivers\DriverHealth;
 use Fuzeo\Queue\Drivers\EnqueuedJob;
 use Fuzeo\Queue\Drivers\Failure;
 use Fuzeo\Queue\Drivers\FailureStore;
+use Fuzeo\Queue\Drivers\ProvidesIdempotencyStore;
+use Fuzeo\Queue\Drivers\ProvidesScheduleStore;
+use Fuzeo\Queue\Drivers\ProvidesUniqueStore;
 use Fuzeo\Queue\Drivers\ProvidesWorkerStore;
 use Fuzeo\Queue\Drivers\QueueDriver;
 use Fuzeo\Queue\Drivers\Reconnectable;
@@ -34,6 +37,14 @@ use Fuzeo\Queue\RateLimit\RateLimit;
 use Fuzeo\Queue\Retry\AttemptRecord;
 use Fuzeo\Queue\Retention\PruneResult;
 use Fuzeo\Queue\Retention\RetentionPolicy;
+use Fuzeo\Queue\Idempotency\IdempotencyStore;
+use Fuzeo\Queue\Idempotency\MysqlIdempotencyStore;
+use Fuzeo\Queue\Schedule\MysqlScheduleStore;
+use Fuzeo\Queue\Schedule\ScheduleStore;
+use Fuzeo\Queue\Unique\MysqlUniqueStore;
+use Fuzeo\Queue\Unique\UniqueIdentity;
+use Fuzeo\Queue\Unique\UniquePolicy;
+use Fuzeo\Queue\Unique\UniqueStore;
 use Fuzeo\Queue\Support\Dates;
 use Fuzeo\Queue\Support\SystemClock;
 use Fuzeo\Queue\Worker\WorkerRepository;
@@ -42,12 +53,18 @@ use Fuzeo\Queue\Worker\WorkerStore;
 /**
  * Durable InnoDB driver. Reservation uses SELECT ... FOR UPDATE SKIP LOCKED.
  */
-final class MySqlDriver implements QueueDriver, FailureStore, ReliableAcknowledger, Reconnectable, StatusAware, ProvidesWorkerStore
+final class MySqlDriver implements QueueDriver, FailureStore, ReliableAcknowledger, Reconnectable, StatusAware, ProvidesWorkerStore, ProvidesUniqueStore, ProvidesIdempotencyStore, ProvidesScheduleStore
 {
     /** @var array<string, string> */
     private array $concurrencyLocks = [];
 
     private readonly AdmissionPolicy $admission;
+
+    private readonly MysqlUniqueStore $uniques;
+
+    private readonly MysqlIdempotencyStore $idempotency;
+
+    private readonly MysqlScheduleStore $schedules;
 
     public function __construct(
         private readonly Connection $connection,
@@ -55,6 +72,24 @@ final class MySqlDriver implements QueueDriver, FailureStore, ReliableAcknowledg
         private readonly Config $config = new Config(),
     ) {
         $this->admission = AdmissionPolicy::fromConfig($config);
+        $this->uniques = new MysqlUniqueStore($connection, $clock);
+        $this->idempotency = new MysqlIdempotencyStore($connection, $clock);
+        $this->schedules = new MysqlScheduleStore($connection, $clock);
+    }
+
+    public function uniqueStore(): UniqueStore
+    {
+        return $this->uniques;
+    }
+
+    public function idempotencyStore(): IdempotencyStore
+    {
+        return $this->idempotency;
+    }
+
+    public function scheduleStore(): ScheduleStore
+    {
+        return $this->schedules;
     }
 
     public function workerStore(): WorkerStore
@@ -73,33 +108,54 @@ final class MySqlDriver implements QueueDriver, FailureStore, ReliableAcknowledg
             throw new DriverException('Only pending envelopes can be enqueued.');
         }
 
-        $json = $this->encodeEnvelope($envelope);
-        $now = Dates::toAtom($this->clock->now());
-        $this->connection->execute(
-            'INSERT INTO ' . $this->jobs() . ' (
-                job_id, envelope_version, job_type, job_schema_version, queue, priority, state, envelope,
-                available_at, attempt, network_id, site_id, scope, origin_package, origin_version, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            [
-                $envelope->jobId,
-                $envelope->envelopeVersion,
-                $envelope->jobType,
-                $envelope->schemaVersion,
-                $envelope->queue,
-                $envelope->priority,
-                JobState::Pending->value,
-                $json,
-                $this->date($envelope->availableAt),
-                $envelope->attempt,
-                $envelope->context->networkId,
-                $envelope->context->siteId,
-                $envelope->context->scope->value,
-                $envelope->origin->package,
-                $envelope->origin->version,
-                $this->date($envelope->createdAt),
-                $this->date(Dates::fromAtom($now)),
-            ]
-        );
+        $identity = UniqueIdentity::forJob($envelope);
+        $this->connection->begin();
+        try {
+            if ($identity !== null) {
+                $acquired = $this->uniques->acquire($identity, $envelope->jobId);
+                if (!$acquired->acquired) {
+                    $this->connection->commit();
+                    try {
+                        $existing = $this->job($acquired->jobId);
+                    } catch (DriverException) {
+                        $existing = $envelope;
+                    }
+
+                    return new EnqueuedJob($existing, false, $acquired->jobId);
+                }
+            }
+            $json = $this->encodeEnvelope($envelope);
+            $now = Dates::toAtom($this->clock->now());
+            $this->connection->execute(
+                'INSERT INTO ' . $this->jobs() . ' (
+                    job_id, envelope_version, job_type, job_schema_version, queue, priority, state, envelope,
+                    available_at, attempt, network_id, site_id, scope, origin_package, origin_version, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                [
+                    $envelope->jobId,
+                    $envelope->envelopeVersion,
+                    $envelope->jobType,
+                    $envelope->schemaVersion,
+                    $envelope->queue,
+                    $envelope->priority,
+                    JobState::Pending->value,
+                    $json,
+                    $this->date($envelope->availableAt),
+                    $envelope->attempt,
+                    $envelope->context->networkId,
+                    $envelope->context->siteId,
+                    $envelope->context->scope->value,
+                    $envelope->origin->package,
+                    $envelope->origin->version,
+                    $this->date($envelope->createdAt),
+                    $this->date(Dates::fromAtom($now)),
+                ]
+            );
+            $this->connection->commit();
+        } catch (\Throwable $exception) {
+            $this->connection->rollBack();
+            throw $exception;
+        }
 
         return new EnqueuedJob($envelope);
     }
@@ -240,6 +296,7 @@ final class MySqlDriver implements QueueDriver, FailureStore, ReliableAcknowledg
             );
         }
         $this->releaseConcurrency($reservation->envelope->jobId);
+        $this->releaseUnique($reservation->envelope);
     }
 
     public function release(Reservation $reservation, ReleaseOptions $options): void
@@ -300,6 +357,7 @@ final class MySqlDriver implements QueueDriver, FailureStore, ReliableAcknowledg
             );
         }
         $this->releaseConcurrency($reservation->envelope->jobId);
+        $this->releaseUnique($reservation->envelope);
     }
 
     public function settleOutcome(
@@ -368,6 +426,9 @@ final class MySqlDriver implements QueueDriver, FailureStore, ReliableAcknowledg
             $this->insertAttempt($record);
             $this->connection->commit();
             $this->releaseConcurrency($reservation->envelope->jobId);
+            if ($nextState === JobState::Dead) {
+                $this->releaseUnique($reservation->envelope);
+            }
         } catch (\Throwable $exception) {
             $this->connection->rollBack();
             throw $exception;
@@ -451,6 +512,7 @@ final class MySqlDriver implements QueueDriver, FailureStore, ReliableAcknowledg
                 $this->connection->rollBack();
                 throw new DriverException('Unable to revive job ' . $jobId . '.');
             }
+            $this->reacquireUnique($revived);
             $this->connection->commit();
 
             return $revived;
@@ -595,11 +657,14 @@ final class MySqlDriver implements QueueDriver, FailureStore, ReliableAcknowledg
     {
         return new DriverCapabilities(
             priorities: true,
+            atomicUniqueness: true,
             delayedJobs: true,
             durable: true,
             atomicRateLimits: true,
             queueConcurrency: true,
             highConcurrency: false,
+            scheduling: true,
+            idempotency: true,
         );
     }
 
@@ -662,13 +727,18 @@ final class MySqlDriver implements QueueDriver, FailureStore, ReliableAcknowledg
         return Schema::quoteTable($this->connection->prefix(), Schema::ATTEMPTS);
     }
 
+    public function requireCurrentSchema(): void
+    {
+        $this->assertSchemaCompatible();
+    }
+
     private function assertSchemaCompatible(): void
     {
         $version = (new DatabaseMigrationRepository($this->connection))->currentVersion();
         if ($version !== SchemaOwner::CURRENT_VERSION) {
             throw new DriverException(
-                'Queue schema version is ' . $version . '; this worker requires '
-                . SchemaOwner::CURRENT_VERSION . '. Restart workers after upgrading fuzeowp/queue.'
+                'Queue schema version is ' . $version . '; this runtime requires '
+                . SchemaOwner::CURRENT_VERSION . '. Restart workers and schedulers after upgrading fuzeowp/queue.'
             );
         }
     }
@@ -689,6 +759,7 @@ final class MySqlDriver implements QueueDriver, FailureStore, ReliableAcknowledg
                 $envelope->jobId,
             ]
         );
+        $this->releaseUnique($envelope);
     }
 
     private function insertAttempt(AttemptRecord $record): void
@@ -978,5 +1049,30 @@ final class MySqlDriver implements QueueDriver, FailureStore, ReliableAcknowledg
              ON DUPLICATE KEY UPDATE `meta_value` = VALUES(`meta_value`)',
             [$key, substr($value, 0, 191)]
         );
+    }
+
+    private function releaseUnique(Envelope $envelope): void
+    {
+        $identity = UniqueIdentity::forJob($envelope);
+        if ($identity === null) {
+            return;
+        }
+        $this->uniques->release($identity, $envelope->jobId, UniquePolicy::ttlSeconds($envelope));
+    }
+
+    private function reacquireUnique(Envelope $envelope): void
+    {
+        $identity = UniqueIdentity::forJob($envelope);
+        if ($identity === null) {
+            return;
+        }
+        $acquired = $this->uniques->acquire($identity, $envelope->jobId);
+        if (!$acquired->acquired && $acquired->jobId !== $envelope->jobId) {
+            throw new \Fuzeo\Queue\Exceptions\UniqueConflictException(
+                'Cannot retry job ' . $envelope->jobId . '; unique key is held by ' . $acquired->jobId . '.',
+                $acquired->jobId,
+                $identity->uniqueKey,
+            );
+        }
     }
 }

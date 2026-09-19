@@ -11,6 +11,11 @@ final class Schema
     public const JOBS = 'fuzeo_queue_jobs';
     public const WORKERS = 'fuzeo_queue_workers';
     public const ATTEMPTS = 'fuzeo_queue_attempts';
+    public const UNIQUE = 'fuzeo_queue_unique';
+    public const IDEMPOTENCY = 'fuzeo_queue_idempotency';
+    public const SCHEDULES = 'fuzeo_queue_schedules';
+    public const SCHEDULE_CLAIMS = 'fuzeo_queue_schedule_claims';
+    public const SCHEDULERS = 'fuzeo_queue_schedulers';
     public const META = 'fuzeo_queue_meta';
     public const LOCK = 'fuzeo_queue_schema';
     public const META_VERSION = 'schema_version';

@@ -33,11 +33,18 @@ final class AdmissionControlTest extends TestCase
         Coordinator::bootForTesting(['driver' => 'memory', 'concurrency' => ['imports' => 1]], $driver, clock: $clock);
         Queue::register(ProcessOrderJob::class, new Origin('acme/shop', '1.0.0'), ProcessOrderHandler::class);
         Queue::on('imports')->dispatch(new ProcessOrderJob(1));
-        $two = Queue::on('imports')->dispatch(new ProcessOrderJob(2));
+        Queue::on('imports')->dispatch(new ProcessOrderJob(2));
         $first = $driver->reserve(new ReserveRequest('imports', 'a', 30));
         self::assertNotNull($first);
         self::assertNull($driver->reserve(new ReserveRequest('imports', 'b', 30)));
-        self::assertSame(0, $driver->get($two->jobId)->attempt);
+        $pending = null;
+        foreach ($driver->all() as $envelope) {
+            if ($envelope->queue === 'imports' && $envelope->jobId !== $first->envelope->jobId) {
+                $pending = $envelope;
+            }
+        }
+        self::assertNotNull($pending);
+        self::assertSame(0, $pending->attempt);
         $driver->acknowledge($first);
         $next = $driver->reserve(new ReserveRequest('imports', 'b', 30));
         self::assertNotNull($next);
@@ -50,14 +57,21 @@ final class AdmissionControlTest extends TestCase
         Coordinator::bootForTesting(['driver' => 'memory'], clock: $clock);
         Queue::register(RateLimitedOrderJob::class, new Origin('acme/shop', '1.0.0'), ProcessOrderHandler::class);
         Queue::dispatch(new RateLimitedOrderJob(1));
-        $second = Queue::dispatch(new RateLimitedOrderJob(2));
+        Queue::dispatch(new RateLimitedOrderJob(2));
         $driver = Coordinator::get()->driver();
         self::assertInstanceOf(MemoryDriver::class, $driver);
         $first = $driver->reserve(new ReserveRequest('default', 'a', 30));
         self::assertNotNull($first);
         $driver->acknowledge($first);
         self::assertNull($driver->reserve(new ReserveRequest('default', 'a', 30)));
-        self::assertSame(0, $driver->get($second->jobId)->attempt);
+        $pending = null;
+        foreach ($driver->all() as $envelope) {
+            if ($envelope->state->value === 'pending') {
+                $pending = $envelope;
+            }
+        }
+        self::assertNotNull($pending);
+        self::assertSame(0, $pending->attempt);
         $clock->set($clock->now()->add(new \DateInterval('PT2S')));
         $again = $driver->reserve(new ReserveRequest('default', 'a', 30));
         self::assertNotNull($again);

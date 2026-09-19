@@ -22,4 +22,9 @@ final class FrozenClock implements Clock
     {
         $this->now = $now->setTimezone(new \DateTimeZone('UTC'));
     }
+
+    public function advance(int $seconds): void
+    {
+        $this->now = $this->now->add(new \DateInterval('PT' . $seconds . 'S'));
+    }
 }

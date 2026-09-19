@@ -8,7 +8,7 @@ Laravel-style `SomeJob::dispatch()` is familiar but copies another framework and
 
 - Jobs implement `Job` with `type()`, `schemaVersion()`, `payload()`.
 - Plugins register types on `fuzeo_queue_ready`.
-- Facade: `Queue::dispatch`, `Queue::on`, `Queue::later`, `Queue::fake`, assertions.
+- Facade: `Queue::dispatch`, `Queue::dispatchResult`, `Queue::on`, `Queue::later`, `Queue::schedule`, `Queue::idempotency`, `Queue::fake`, assertions.
 - Core is `QueueManager` + `Dispatcher` for tests without statics.
 
 Handlers are registry entries (`class-string`). Phase 1 does not invoke handlers.

@@ -7,13 +7,27 @@ namespace Fuzeo\Queue\Core;
 use Fuzeo\Queue\Config\Config;
 use Fuzeo\Queue\Contracts\Clock;
 use Fuzeo\Queue\Contracts\ExecutionContextResolver;
+use Fuzeo\Queue\Drivers\ProvidesIdempotencyStore;
+use Fuzeo\Queue\Drivers\ProvidesScheduleStore;
+use Fuzeo\Queue\Drivers\ProvidesUniqueStore;
 use Fuzeo\Queue\Drivers\QueueDriver;
+use Fuzeo\Queue\Idempotency\Idempotency;
+use Fuzeo\Queue\Idempotency\IdempotencyStore;
+use Fuzeo\Queue\Idempotency\MemoryIdempotencyStore;
 use Fuzeo\Queue\Jobs\EnvelopeFactory;
 use Fuzeo\Queue\Jobs\JobRegistry;
 use Fuzeo\Queue\Persistence\MigrationRunner;
 use Fuzeo\Queue\Runtime\ConsumerRegistry;
+use Fuzeo\Queue\Schedule\AlwaysPresentSites;
+use Fuzeo\Queue\Schedule\MemoryScheduleStore;
+use Fuzeo\Queue\Schedule\ScheduleBook;
+use Fuzeo\Queue\Schedule\Scheduler;
+use Fuzeo\Queue\Schedule\SitePresence;
+use Fuzeo\Queue\Schedule\WordPressSitePresence;
 use Fuzeo\Queue\Serialization\PayloadSerializer;
 use Fuzeo\Queue\Testing\FakeQueue;
+use Fuzeo\Queue\Unique\MemoryUniqueStore;
+use Fuzeo\Queue\Unique\UniqueStore;
 
 final class QueueManager
 {
@@ -23,6 +37,14 @@ final class QueueManager
 
     private readonly ConsumerRegistry $consumers;
 
+    private ScheduleBook $schedules;
+
+    private Scheduler $scheduler;
+
+    private Idempotency $idempotency;
+
+    private readonly SitePresence $sites;
+
     public function __construct(
         private Config $config,
         private readonly JobRegistry $registry,
@@ -31,9 +53,11 @@ final class QueueManager
         private readonly ExecutionContextResolver $contextResolver,
         private readonly Clock $clock,
         private readonly MigrationRunner $migrations,
+        ?SitePresence $sites = null,
     ) {
+        $this->sites = $sites ?? (function_exists('get_current_blog_id') ? new WordPressSitePresence() : new AlwaysPresentSites());
         $this->consumers = new ConsumerRegistry();
-        $this->dispatcher = $this->makeDispatcher();
+        $this->rebuildControlPlane();
     }
 
     public function consumers(): ConsumerRegistry
@@ -81,26 +105,49 @@ final class QueueManager
         return $this->dispatcher;
     }
 
+    public function schedules(): ScheduleBook
+    {
+        return $this->schedules;
+    }
+
+    public function scheduler(): Scheduler
+    {
+        return $this->scheduler;
+    }
+
+    public function idempotency(): Idempotency
+    {
+        return $this->idempotency;
+    }
+
+    public function unique(): UniqueStore
+    {
+        return $this->uniqueStore();
+    }
+
     public function fake(): FakeQueue
     {
         if ($this->fake === null) {
             $this->fake = new FakeQueue($this->clock);
-            $this->dispatcher = $this->makeDispatcher();
+            $this->rebuildControlPlane();
         }
 
-        return $this->fake;
+        /** @var FakeQueue $fake */
+        $fake = $this->fake;
+
+        return $fake;
     }
 
     public function useFake(FakeQueue $fake): void
     {
         $this->fake = $fake;
-        $this->dispatcher = $this->makeDispatcher();
+        $this->rebuildControlPlane();
     }
 
     public function clearFake(): void
     {
         $this->fake = null;
-        $this->dispatcher = $this->makeDispatcher();
+        $this->rebuildControlPlane();
     }
 
     public function isFaked(): bool
@@ -120,6 +167,65 @@ final class QueueManager
             $this->config->defaultTimeoutSeconds,
         );
 
-        return new Dispatcher($factory, $driver, $this->config, $this->fake);
+        return new Dispatcher($factory, $driver, $this->config, $this->fake, $this->clock);
+    }
+
+    private function rebuildControlPlane(): void
+    {
+        $this->dispatcher = $this->makeDispatcher();
+        $this->schedules = new ScheduleBook(
+            $this->scheduleStore(),
+            $this->clock,
+            $this->contextResolver,
+            $this->registry,
+        );
+        $this->scheduler = new Scheduler(
+            $this->scheduleStore(),
+            $this->dispatcher,
+            $this->registry,
+            $this->uniqueStore(),
+            $this->clock,
+            $this->sites,
+            claimLeaseSeconds: $this->config->scheduleClaimLeaseSeconds,
+            maxCatchUp: $this->config->scheduleMaxCatchUp,
+            catchUpCutoffDays: $this->config->scheduleCatchUpCutoffDays,
+        );
+        $this->idempotency = new Idempotency(
+            $this->idempotencyStore(),
+            $this->contextResolver,
+            $this->clock,
+            $this->config->idempotencyLeaseSeconds,
+            $this->config->idempotencyRetainSeconds,
+        );
+    }
+
+    private function uniqueStore(): UniqueStore
+    {
+        $driver = $this->driver();
+        if ($driver instanceof ProvidesUniqueStore) {
+            return $driver->uniqueStore();
+        }
+
+        return new MemoryUniqueStore($this->clock);
+    }
+
+    private function scheduleStore(): \Fuzeo\Queue\Schedule\ScheduleStore
+    {
+        $driver = $this->driver();
+        if ($driver instanceof ProvidesScheduleStore) {
+            return $driver->scheduleStore();
+        }
+
+        return new MemoryScheduleStore($this->clock);
+    }
+
+    private function idempotencyStore(): IdempotencyStore
+    {
+        $driver = $this->driver();
+        if ($driver instanceof ProvidesIdempotencyStore) {
+            return $driver->idempotencyStore();
+        }
+
+        return new MemoryIdempotencyStore($this->clock);
     }
 }

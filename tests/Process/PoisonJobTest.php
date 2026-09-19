@@ -39,9 +39,9 @@ final class PoisonJobTest extends MysqlTestCase
         $php = PHP_BINARY;
         $script = dirname(__DIR__) . '/bin/crash-job.php';
         $this->runCrashWorker($php, $script);
-        sleep(9);
+        sleep(25);
         $this->runCrashWorker($php, $script);
-        sleep(9);
+        sleep(25);
 
         $driver = Coordinator::get()->driver();
         self::assertInstanceOf(MySqlDriver::class, $driver);
@@ -91,8 +91,7 @@ final class PoisonJobTest extends MysqlTestCase
         }
         $out['FUZEO_QUEUE_TEST_DB_USER'] = getenv('FUZEO_QUEUE_TEST_DB_USER') ?: 'root';
         $pass = getenv('FUZEO_QUEUE_TEST_DB_PASS');
-        $out['FUZEO_QUEUE_TEST_DB_PASS'] = $pass === false ? 'root' : $pass;
 
-        return $out;
+        return \Fuzeo\Queue\Tests\Support\ChildDatabase::withPassword($out, $pass === false ? 'root' : $pass);
     }
 }

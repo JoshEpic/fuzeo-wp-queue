@@ -13,6 +13,7 @@ use Fuzeo\Queue\Persistence\BaselineMigration;
 use Fuzeo\Queue\Persistence\DatabaseMigrationRepository;
 use Fuzeo\Queue\Persistence\MigrationRunner;
 use Fuzeo\Queue\Persistence\MysqlAdvisoryLock;
+use Fuzeo\Queue\Persistence\Phase5TablesMigration;
 use Fuzeo\Queue\Persistence\QueueTablesMigration;
 use Fuzeo\Queue\Persistence\Schema;
 use Fuzeo\Queue\Queue;
@@ -121,6 +122,14 @@ final class MysqlRetryTest extends MysqlTestCase
         ]);
         self::assertSame(3, $repo->currentVersion());
         $this->connection->selectOne('SELECT `attempt_id` FROM ' . Schema::quoteTable($this->connection->prefix(), Schema::ATTEMPTS) . ' LIMIT 1');
+        $runner->run([
+            new BaselineMigration($this->connection),
+            new QueueTablesMigration($this->connection),
+            new AttemptsMigration($this->connection),
+            new Phase5TablesMigration($this->connection),
+        ]);
+        self::assertSame(4, $repo->currentVersion());
+        $this->connection->selectOne('SELECT `unique_id` FROM ' . Schema::quoteTable($this->connection->prefix(), Schema::UNIQUE) . ' LIMIT 1');
     }
 
     public function testOldSchemaRefusesReserve(): void

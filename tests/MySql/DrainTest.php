@@ -53,10 +53,13 @@ final class DrainTest extends MysqlTestCase
      */
     private function childEnv(): array
     {
-        return [
-            'FUZEO_QUEUE_TEST_DSN' => $this->dsn,
-            'FUZEO_QUEUE_TEST_DB_USER' => $this->user,
-            'FUZEO_QUEUE_TEST_DB_PASS' => $this->password,
-        ];
+        return \Fuzeo\Queue\Tests\Support\ChildDatabase::withPassword(
+            [
+                'PATH' => (string) getenv('PATH'),
+                'FUZEO_QUEUE_TEST_DSN' => $this->dsn,
+                'FUZEO_QUEUE_TEST_DB_USER' => $this->user,
+            ],
+            $this->password
+        );
     }
 }

@@ -9,7 +9,7 @@ namespace Fuzeo\Queue\Redis;
  */
 final class RedisScripts
 {
-    public const VERSION = '1';
+    public const VERSION = '3';
 
     public const ENQUEUE = <<<'LUA'
 local jobKey = KEYS[1]
@@ -22,7 +22,15 @@ local available = ARGV[3]
 local score = ARGV[4]
 local queue = ARGV[5]
 local jobId = ARGV[6]
-redis.call('HSET', jobKey, 'envelope', envelope, 'state', state, 'available_at', available, 'queue', queue)
+local uniqueKey = ARGV[8]
+if uniqueKey ~= nil and uniqueKey ~= '' then
+  local existing = redis.call('GET', uniqueKey)
+  if existing then
+    return {0, existing}
+  end
+  redis.call('SET', uniqueKey, jobId)
+end
+redis.call('HSET', jobKey, 'envelope', envelope, 'state', state, 'available_at', available, 'queue', queue, 'unique_redis_key', uniqueKey or '', 'unique_ttl', ARGV[9] or '0')
 if tonumber(available) > tonumber(ARGV[7]) then
   redis.call('ZADD', KEYS[5], available, jobId)
 else
@@ -31,7 +39,7 @@ end
 redis.call('SADD', queueSet, queue)
 redis.call('RPUSH', wakeup, '1')
 redis.call('LTRIM', wakeup, -8, -1)
-return 1
+return {1, jobId}
 LUA;
 
     public const RESERVE = <<<'LUA'
@@ -202,6 +210,15 @@ redis.call('HSET', jobKey, 'envelope', cjson.encode(env), 'state', 'completed', 
 redis.call('ZREM', reserved, jobId)
 redis.call('ZREM', conc, jobId)
 redis.call('ZADD', completed, now, jobId)
+local uk = redis.call('HGET', jobKey, 'unique_redis_key')
+if uk and uk ~= '' then
+  local ttl = tonumber(redis.call('HGET', jobKey, 'unique_ttl') or '0')
+  if ttl > 0 then
+    redis.call('EXPIRE', uk, ttl)
+  else
+    redis.call('DEL', uk)
+  end
+end
 return 1
 LUA;
 
@@ -269,6 +286,15 @@ redis.call('ZREM', conc, jobId)
 redis.call('RPUSH', attempts, record)
 if nextState == 'dead' or nextState == 'failed' then
   redis.call('ZADD', dest, destScore, jobId)
+  local uk = redis.call('HGET', jobKey, 'unique_redis_key')
+  if uk and uk ~= '' then
+    local ttl = tonumber(redis.call('HGET', jobKey, 'unique_ttl') or '0')
+    if ttl > 0 then
+      redis.call('EXPIRE', uk, ttl)
+    else
+      redis.call('DEL', uk)
+    end
+  end
 else
   if available > now then
     redis.call('ZADD', delayedOrReady, available, jobId)
@@ -310,6 +336,14 @@ local env = cjson.decode(raw)
 if env['state'] ~= 'dead' and env['state'] ~= 'failed' then
   return -1
 end
+local uniqueKey = ARGV[5]
+if uniqueKey ~= nil and uniqueKey ~= '' then
+  local existing = redis.call('GET', uniqueKey)
+  if existing and existing ~= jobId then
+    return -2
+  end
+  redis.call('SET', uniqueKey, jobId)
+end
 env['state'] = 'pending'
 env['attempt'] = 0
 local meta = env['metadata'] or {}
@@ -336,6 +370,46 @@ end
 return 0
 LUA;
 
+    public const UNIQUE_RELEASE = <<<'LUA'
+if redis.call('GET', KEYS[1]) == ARGV[1] then
+  local ttl = tonumber(ARGV[2] or '0')
+  if ttl > 0 then
+    return redis.call('EXPIRE', KEYS[1], ttl)
+  end
+  return redis.call('DEL', KEYS[1])
+end
+return 0
+LUA;
+
+    public const IDEMPOTENCY_BEGIN = <<<'LUA'
+local key = KEYS[1]
+local ownerKey = KEYS[2]
+if redis.call('EXISTS', key) == 1 then
+  return {
+    0,
+    redis.call('HGET', key, 'status'),
+    redis.call('HGET', key, 'result') or '',
+  }
+end
+redis.call('HSET', key, 'status', 'started', 'owner', ARGV[1], 'key', ARGV[2], 'started_at', ARGV[3], 'expires_at', tostring(tonumber(ARGV[3]) + tonumber(ARGV[4])), 'result', '')
+redis.call('EXPIRE', key, tonumber(ARGV[4]))
+redis.call('SET', ownerKey, key)
+redis.call('EXPIRE', ownerKey, tonumber(ARGV[4]))
+return {1, 'started', ''}
+LUA;
+
+    public const IDEMPOTENCY_COMPLETE = <<<'LUA'
+local key = KEYS[1]
+local ownerKey = KEYS[2]
+if redis.call('HGET', key, 'owner') ~= ARGV[1] or redis.call('HGET', key, 'status') ~= 'started' then
+  return 0
+end
+redis.call('HSET', key, 'status', 'completed', 'result', ARGV[2], 'completed_at', ARGV[3])
+redis.call('EXPIRE', key, tonumber(ARGV[4]))
+redis.call('EXPIRE', ownerKey, tonumber(ARGV[4]))
+return 1
+LUA;
+
     /**
      * @return array<string, string>
      */
@@ -351,6 +425,9 @@ LUA;
             'revive' => self::REVIVE,
             'lock_release' => self::LOCK_RELEASE,
             'lock_extend' => self::LOCK_EXTEND,
+            'unique_release' => self::UNIQUE_RELEASE,
+            'idemp_begin' => self::IDEMPOTENCY_BEGIN,
+            'idemp_complete' => self::IDEMPOTENCY_COMPLETE,
         ];
     }
 }

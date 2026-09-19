@@ -80,6 +80,51 @@ final class RedisKeys
         return $this->prefix . ':lock:' . $name;
     }
 
+    public function unique(string $hash): string
+    {
+        return $this->prefix . ':unique:' . $hash;
+    }
+
+    public function idempotency(string $hash): string
+    {
+        return $this->prefix . ':idemp:' . $hash;
+    }
+
+    public function idempotencyOwner(string $token): string
+    {
+        return $this->prefix . ':idemp-owner:' . $token;
+    }
+
+    public function schedule(string $scheduleId): string
+    {
+        return $this->prefix . ':schedule:' . $scheduleId;
+    }
+
+    public function schedules(): string
+    {
+        return $this->prefix . ':schedules';
+    }
+
+    public function scheduleDue(): string
+    {
+        return $this->prefix . ':schedule:due';
+    }
+
+    public function scheduleClaim(string $occurrenceId): string
+    {
+        return $this->prefix . ':schedule:claim:' . $occurrenceId;
+    }
+
+    public function scheduler(string $schedulerId): string
+    {
+        return $this->prefix . ':scheduler:' . $schedulerId;
+    }
+
+    public function schedulers(): string
+    {
+        return $this->prefix . ':schedulers';
+    }
+
     public function meta(): string
     {
         return $this->prefix . ':meta';

@@ -22,6 +22,7 @@ final class DispatchOptions
         public readonly ?string $parentJobId = null,
         public readonly ?string $idempotencyKey = null,
         public readonly ?string $uniqueKey = null,
+        public readonly ?int $uniqueTtlSeconds = null,
         public readonly array $metadata = [],
         public readonly array $tags = [],
         public readonly ?int $maxAttempts = null,
@@ -69,6 +70,11 @@ final class DispatchOptions
     public function withUniqueKey(string $key): self
     {
         return $this->cloneWith(['uniqueKey' => $key]);
+    }
+
+    public function withUniqueTtl(?int $seconds): self
+    {
+        return $this->cloneWith(['uniqueTtlSeconds' => $seconds]);
     }
 
     /**
@@ -119,6 +125,7 @@ final class DispatchOptions
             parentJobId: $this->parentJobId,
             idempotencyKey: $overrides['idempotencyKey'] ?? $this->idempotencyKey,
             uniqueKey: $overrides['uniqueKey'] ?? $this->uniqueKey,
+            uniqueTtlSeconds: array_key_exists('uniqueTtlSeconds', $overrides) ? $overrides['uniqueTtlSeconds'] : $this->uniqueTtlSeconds,
             metadata: $overrides['metadata'] ?? $this->metadata,
             tags: $overrides['tags'] ?? $this->tags,
             maxAttempts: $overrides['maxAttempts'] ?? $this->maxAttempts,

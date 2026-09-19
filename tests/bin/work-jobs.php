@@ -6,6 +6,7 @@ use Fuzeo\Queue\Jobs\Origin;
 use Fuzeo\Queue\Persistence\PdoConnection;
 use Fuzeo\Queue\Queue;
 use Fuzeo\Queue\Runtime\Coordinator;
+use Fuzeo\Queue\Tests\Support\ChildDatabase;
 use Fuzeo\Queue\Tests\Support\FileRecordingHandler;
 use Fuzeo\Queue\Tests\Support\RecordJob;
 use Fuzeo\Queue\Worker\JobExecutor;
@@ -22,13 +23,9 @@ if (!is_string($dsn) || $dsn === '') {
     exit(1);
 }
 $user = getenv('FUZEO_QUEUE_TEST_DB_USER') ?: 'root';
-$password = getenv('FUZEO_QUEUE_TEST_DB_PASS');
-if ($password === false) {
-    $password = 'root';
-}
 $maxJobs = (int) ($argv[1] ?? 1);
 
-$connection = PdoConnection::fromDsn($dsn, $user, $password, 'wp_');
+$connection = PdoConnection::fromDsn($dsn, $user, ChildDatabase::passwordFromEnvironment(), 'wp_');
 Coordinator::bootForTesting(['driver' => 'mysql'], connection: $connection);
 Queue::register(RecordJob::class, new Origin('acme/shop', '1.0.0'), FileRecordingHandler::class);
 

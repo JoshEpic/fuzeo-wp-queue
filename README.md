@@ -8,7 +8,7 @@ composer require fuzeowp/queue
 
 Fuzeo Queue is a Composer library, not a WordPress plugin and not a wrapper around WP-Cron or Action Scheduler. It owns its queue architecture.
 
-Phase 4 adds a Redis production driver, driver conformance tests, and fleet concurrency/rate limits. Delivery remains **at-least-once**.
+Phase 5 adds delayed dispatch as a first-class API, recurring schedules, unique jobs, and idempotency primitives. Delivery remains **at-least-once**. Do not treat uniqueness or the idempotency store as exactly-once execution.
 
 ## Requirements
 
@@ -50,9 +50,11 @@ add_action('fuzeo_queue_ready', function ($runtime): void {
 });
 
 Queue::dispatch(new ProcessOrder(123));
+Queue::later('+15 minutes', new ProcessOrder(123));
 
-// Independent worker:
+// Independent worker / scheduler:
 // wp fuzeo-queue work
+// wp fuzeo-queue schedule-work
 ```
 
 ## Safe payloads
@@ -66,12 +68,16 @@ Store IDs and primitive data, not live PHP or WordPress objects.
 
 ## Delivery semantics
 
-Fuzeo Queue is **at-least-once**. A worker may crash after a side effect and before ACK; after the lease expires another worker will run the job. Handlers must be idempotent.
+Fuzeo Queue is **at-least-once**. A worker may crash after a side effect and before ACK; after the lease expires another worker will run the job. Use [unique jobs](docs/unique-jobs.md) to prevent duplicate enqueue and [idempotency primitives](docs/idempotency.md) (plus vendor idempotency keys) to protect logical effects.
 
 ## Documentation
 
 - [Bootstrapping](docs/bootstrapping.md)
 - [Jobs and payloads](docs/jobs.md)
+- [Delayed jobs](docs/delayed-jobs.md)
+- [Recurring schedules](docs/schedules.md)
+- [Unique jobs](docs/unique-jobs.md)
+- [Idempotency primitives](docs/idempotency.md)
 - [Retries and dead letters](docs/retries.md)
 - [MySQL driver](docs/mysql.md)
 - [Redis driver](docs/redis.md)

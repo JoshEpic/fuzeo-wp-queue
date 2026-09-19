@@ -22,6 +22,9 @@
         <testsuite name="Conformance">
             <directory>tests/Conformance</directory>
         </testsuite>
+        <testsuite name="MySql">
+            <directory>tests/MySql</directory>
+        </testsuite>
         <testsuite name="Redis">
             <directory>tests/Redis</directory>
         </testsuite>

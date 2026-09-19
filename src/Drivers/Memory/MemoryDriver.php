@@ -12,6 +12,9 @@ use Fuzeo\Queue\Drivers\DriverHealth;
 use Fuzeo\Queue\Drivers\EnqueuedJob;
 use Fuzeo\Queue\Drivers\Failure;
 use Fuzeo\Queue\Drivers\FailureStore;
+use Fuzeo\Queue\Drivers\ProvidesIdempotencyStore;
+use Fuzeo\Queue\Drivers\ProvidesScheduleStore;
+use Fuzeo\Queue\Drivers\ProvidesUniqueStore;
 use Fuzeo\Queue\Drivers\QueueDriver;
 use Fuzeo\Queue\Drivers\StatusAware;
 use Fuzeo\Queue\Drivers\ReleaseOptions;
@@ -26,12 +29,20 @@ use Fuzeo\Queue\Jobs\QueueName;
 use Fuzeo\Queue\Retry\AttemptRecord;
 use Fuzeo\Queue\Retention\PruneResult;
 use Fuzeo\Queue\Retention\RetentionPolicy;
+use Fuzeo\Queue\Unique\MemoryUniqueStore;
+use Fuzeo\Queue\Unique\UniqueIdentity;
+use Fuzeo\Queue\Unique\UniquePolicy;
+use Fuzeo\Queue\Unique\UniqueStore;
+use Fuzeo\Queue\Idempotency\IdempotencyStore;
+use Fuzeo\Queue\Idempotency\MemoryIdempotencyStore;
+use Fuzeo\Queue\Schedule\MemoryScheduleStore;
+use Fuzeo\Queue\Schedule\ScheduleStore;
 use Fuzeo\Queue\Support\SystemClock;
 
 /**
  * In-process driver for tests and local experiments. Not durable across requests.
  */
-final class MemoryDriver implements QueueDriver, FailureStore, StatusAware
+final class MemoryDriver implements QueueDriver, FailureStore, StatusAware, ProvidesUniqueStore, ProvidesIdempotencyStore, ProvidesScheduleStore
 {
     /** @var array<string, Envelope> */
     private array $jobs = [];
@@ -44,17 +55,50 @@ final class MemoryDriver implements QueueDriver, FailureStore, StatusAware
 
     private readonly TokenBucket $buckets;
 
+    private readonly MemoryUniqueStore $uniques;
+
+    private readonly MemoryIdempotencyStore $idempotency;
+
+    private readonly MemoryScheduleStore $schedules;
+
     public function __construct(
         private readonly Clock $clock = new SystemClock(),
         private readonly AdmissionPolicy $admission = new AdmissionPolicy(),
     ) {
         $this->buckets = new TokenBucket();
+        $this->uniques = new MemoryUniqueStore($clock);
+        $this->idempotency = new MemoryIdempotencyStore($clock);
+        $this->schedules = new MemoryScheduleStore($clock);
+    }
+
+    public function uniqueStore(): UniqueStore
+    {
+        return $this->uniques;
+    }
+
+    public function idempotencyStore(): IdempotencyStore
+    {
+        return $this->idempotency;
+    }
+
+    public function scheduleStore(): ScheduleStore
+    {
+        return $this->schedules;
     }
 
     public function enqueue(Envelope $envelope): EnqueuedJob
     {
         if ($envelope->state !== JobState::Pending) {
             throw new DriverException('Only pending envelopes can be enqueued.');
+        }
+        $identity = UniqueIdentity::forJob($envelope);
+        if ($identity !== null) {
+            $acquired = $this->uniques->acquire($identity, $envelope->jobId);
+            if (!$acquired->acquired) {
+                $existing = $this->jobs[$acquired->jobId] ?? $envelope;
+
+                return new EnqueuedJob($existing, false, $acquired->jobId);
+            }
         }
 
         $this->jobs[$envelope->jobId] = $envelope;
@@ -121,6 +165,7 @@ final class MemoryDriver implements QueueDriver, FailureStore, StatusAware
         $current = $this->requireOwnership($reservation);
         $this->jobs[$current->envelope->jobId] = $current->envelope->withState(JobState::Completed);
         unset($this->reservations[$current->envelope->jobId]);
+        $this->releaseUnique($current->envelope);
     }
 
     public function release(Reservation $reservation, ReleaseOptions $options): void
@@ -141,6 +186,7 @@ final class MemoryDriver implements QueueDriver, FailureStore, StatusAware
         $failed = $current->envelope->withState(JobState::Failed);
         $this->jobs[$failed->jobId] = $failed;
         unset($this->reservations[$failed->jobId]);
+        $this->releaseUnique($failed);
         unset($failure);
     }
 
@@ -161,6 +207,9 @@ final class MemoryDriver implements QueueDriver, FailureStore, StatusAware
         $this->jobs[$updated->jobId] = $updated;
         unset($this->reservations[$updated->jobId]);
         $this->attempts[$updated->jobId][] = $record;
+        if ($nextState === JobState::Dead) {
+            $this->releaseUnique($updated);
+        }
     }
 
     public function attemptsFor(string $jobId): array
@@ -198,6 +247,7 @@ final class MemoryDriver implements QueueDriver, FailureStore, StatusAware
             ->withAvailableAt($this->clock->now())
             ->withMetadata($metadata);
         $this->jobs[$jobId] = $revived;
+        $this->reacquireUnique($revived);
 
         return $revived;
     }
@@ -298,10 +348,13 @@ final class MemoryDriver implements QueueDriver, FailureStore, StatusAware
     {
         return new DriverCapabilities(
             priorities: true,
+            atomicUniqueness: true,
             delayedJobs: true,
             durable: false,
             atomicRateLimits: true,
             queueConcurrency: true,
+            scheduling: true,
+            idempotency: true,
         );
     }
 
@@ -336,6 +389,7 @@ final class MemoryDriver implements QueueDriver, FailureStore, StatusAware
             $envelope = $reservation->envelope;
             if ($envelope->attempt >= $envelope->maxAttempts) {
                 $this->jobs[$jobId] = $envelope->withState(JobState::Dead);
+                $this->releaseUnique($envelope);
             } else {
                 $this->jobs[$jobId] = $envelope->withState(JobState::Pending);
             }
@@ -358,6 +412,31 @@ final class MemoryDriver implements QueueDriver, FailureStore, StatusAware
         }
 
         return $current;
+    }
+
+    private function releaseUnique(Envelope $envelope): void
+    {
+        $identity = UniqueIdentity::forJob($envelope);
+        if ($identity === null) {
+            return;
+        }
+        $this->uniques->release($identity, $envelope->jobId, UniquePolicy::ttlSeconds($envelope));
+    }
+
+    private function reacquireUnique(Envelope $envelope): void
+    {
+        $identity = UniqueIdentity::forJob($envelope);
+        if ($identity === null) {
+            return;
+        }
+        $acquired = $this->uniques->acquire($identity, $envelope->jobId);
+        if (!$acquired->acquired && $acquired->jobId !== $envelope->jobId) {
+            throw new \Fuzeo\Queue\Exceptions\UniqueConflictException(
+                'Cannot retry job ' . $envelope->jobId . '; unique key is held by ' . $acquired->jobId . '.',
+                $acquired->jobId,
+                $identity->uniqueKey,
+            );
+        }
     }
 
     private function isBetter(Envelope $candidate, Envelope $current): bool

@@ -31,6 +31,18 @@ public function test_checkout_dispatches_processing(): void
 
 Assertions accept a job class or a stable type string such as `acme.process_order`.
 
+Schedules, uniqueness, and idempotency use the same fake/memory driver. Freeze time with `FrozenClock` and call `Queue::runtime()->scheduler()->runDue()` — do not `sleep()` in unit tests.
+
+```php
+$clock = new \Fuzeo\Queue\Support\FrozenClock(new DateTimeImmutable('2026-06-01T00:00:00Z'));
+Coordinator::bootForTesting(['driver' => 'memory'], clock: $clock);
+Queue::register(ProcessOrder::class, new Origin('acme/shop', '1.0.0'));
+Queue::schedule()->job('tick', new ProcessOrder(1))->everySeconds(60)->save();
+$clock->advance(60);
+Queue::runtime()->scheduler()->runDue();
+self::assertSame(1, Queue::runtime()->driver()->size('default'));
+```
+
 MySQL integration tests need a database:
 
 ```bash

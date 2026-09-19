@@ -30,6 +30,7 @@ use Fuzeo\Queue\Persistence\MemoryMigrationRepository;
 use Fuzeo\Queue\Persistence\MysqlAdvisoryLock;
 use Fuzeo\Queue\Persistence\MigrationRunner;
 use Fuzeo\Queue\Persistence\AttemptsMigration;
+use Fuzeo\Queue\Persistence\Phase5TablesMigration;
 use Fuzeo\Queue\Persistence\QueueTablesMigration;
 use Fuzeo\Queue\Persistence\WpdbConnection;
 use Fuzeo\Queue\Serialization\JsonPayloadSerializer;
@@ -282,7 +283,8 @@ final class Coordinator
                 'warning',
                 'driver_switch',
                 'Queue driver changed from ' . $previous . ' to ' . $driver
-                . '. Outstanding jobs are not migrated. Drain or replay the previous backend before switching.'
+                . '. Outstanding jobs, schedules, uniqueness claims, and idempotency state are not migrated.'
+                . ' Drain or inspect the previous backend before switching. Automatic migration is unsupported in 0.5.'
             );
         }
         self::kernelSet('active_driver', $driver);
@@ -401,6 +403,7 @@ final class Coordinator
         if (self::$connection !== null) {
             $migrations[] = new QueueTablesMigration(self::$connection);
             $migrations[] = new AttemptsMigration(self::$connection);
+            $migrations[] = new Phase5TablesMigration(self::$connection);
         }
         $result = $manager->migrations()->run($migrations);
         $current = (int) (self::kernel()['migrations_run'] ?? 0);

@@ -9,7 +9,7 @@ use Fuzeo\Queue\Jobs\Envelope;
 use Fuzeo\Queue\Jobs\ExecutionContext;
 use Fuzeo\Queue\Jobs\Job;
 use Fuzeo\Queue\Jobs\Origin;
-use Fuzeo\Queue\Support\Dates;
+use Fuzeo\Queue\Support\Delay;
 
 final class PendingDispatch
 {
@@ -28,11 +28,9 @@ final class PendingDispatch
         return $clone;
     }
 
-    public function later(\DateTimeInterface|int $when): self
+    public function later(\DateTimeInterface|int|string $when): self
     {
-        $at = is_int($when)
-            ? (new \DateTimeImmutable('@' . $when))->setTimezone(new \DateTimeZone('UTC'))
-            : Dates::utc($when);
+        $at = Delay::resolve($this->dispatcher->clock(), $when);
 
         $clone = clone $this;
         $clone->options = $this->options->withAvailableAt($at);
@@ -42,8 +40,10 @@ final class PendingDispatch
 
     public function delay(int $seconds): self
     {
-        $at = new \DateTimeImmutable('now', new \DateTimeZone('UTC'));
-        $at = $at->add(new \DateInterval('PT' . $seconds . 'S'));
+        if ($seconds < 0) {
+            throw new \Fuzeo\Queue\Exceptions\InvalidDelayException('Delay seconds cannot be negative.');
+        }
+        $at = $this->dispatcher->clock()->now()->add(new \DateInterval('PT' . $seconds . 'S'));
 
         return $this->later($at);
     }
@@ -104,6 +104,14 @@ final class PendingDispatch
         return $clone;
     }
 
+    public function withUniqueTtl(?int $seconds): self
+    {
+        $clone = clone $this;
+        $clone->options = $this->options->withUniqueTtl($seconds);
+
+        return $clone;
+    }
+
     /**
      * @param list<string> $tags
      */
@@ -127,6 +135,11 @@ final class PendingDispatch
     }
 
     public function dispatch(?Job $job = null): Envelope
+    {
+        return $this->dispatchResult($job)->envelope;
+    }
+
+    public function dispatchResult(?Job $job = null): \Fuzeo\Queue\Jobs\DispatchResult
     {
         $job ??= $this->job;
         if ($job === null) {

@@ -6,7 +6,7 @@ Administrators may change `FUZEO_QUEUE_DRIVER` from mysql to redis.
 
 ## Decision
 
-No live migration in Phase 4. Coordinator records `active_driver` in the kernel and emits diagnostic `driver_switch` when it changes: outstanding jobs stay on the previous backend. Envelopes do not embed the driver name (portability). Worker registry lives in the **active** backend (`ProvidesWorkerStore`).
+No live migration in Phase 4. Coordinator records `active_driver` in the kernel and emits diagnostic `driver_switch` when it changes: outstanding jobs stay on the previous backend. Envelopes do not embed the driver name (portability). Worker registry lives in the **active** backend (`ProvidesWorkerStore`). Phase 5 schedule, unique, and idempotency state also stays on the previous backend ([ADR-050](050-driver-switching-with-scheduler-uniqueness-state.md)).
 
 ## Alternatives
 

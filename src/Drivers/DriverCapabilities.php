@@ -20,6 +20,8 @@ final class DriverCapabilities
         public readonly bool $atomicRateLimits = false,
         public readonly bool $queueConcurrency = false,
         public readonly bool $highConcurrency = false,
+        public readonly bool $scheduling = false,
+        public readonly bool $idempotency = false,
     ) {
     }
 
@@ -36,6 +38,8 @@ final class DriverCapabilities
             'atomic_rate_limits' => $this->atomicRateLimits,
             'queue_concurrency' => $this->queueConcurrency,
             'high_concurrency' => $this->highConcurrency,
+            'scheduling' => $this->scheduling,
+            'idempotency' => $this->idempotency,
             default => false,
         };
     }

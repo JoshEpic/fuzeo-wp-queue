@@ -32,5 +32,10 @@ Precedence, highest first:
 | `redis_namespace` | `FUZEO_QUEUE_REDIS_NAMESPACE` | `local` |
 | `concurrency` | `FUZEO_QUEUE_CONCURRENCY` | `{}` JSON map |
 | `rate_limits` | `FUZEO_QUEUE_RATE_LIMITS` | `[]` JSON list |
+| `schedule_claim_lease_seconds` | `FUZEO_QUEUE_SCHEDULE_CLAIM_LEASE_SECONDS` | `30` |
+| `schedule_max_catch_up` | `FUZEO_QUEUE_SCHEDULE_MAX_CATCH_UP` | `100` |
+| `schedule_catch_up_cutoff_days` | `FUZEO_QUEUE_SCHEDULE_CATCH_UP_CUTOFF_DAYS` | `7` |
+| `idempotency_lease_seconds` | `FUZEO_QUEUE_IDEMPOTENCY_LEASE_SECONDS` | `60` |
+| `idempotency_retain_seconds` | `FUZEO_QUEUE_IDEMPOTENCY_RETAIN_SECONDS` | `604800` |
 
-Drivers: `mysql`, `redis` (PhpRedis), `memory` (tests), `unavailable` (fail closed), plus `Queue::fake()`. Switching drivers does not migrate jobs. See [Redis](redis.md).
+Drivers: `mysql`, `redis` (PhpRedis), `memory` (tests), `unavailable` (fail closed), plus `Queue::fake()`. Switching drivers does not migrate jobs, schedules, uniqueness claims, or idempotency records. See [Redis](redis.md) and [ADR-050](adr/050-driver-switching-with-scheduler-uniqueness-state.md).

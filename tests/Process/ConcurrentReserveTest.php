@@ -106,9 +106,8 @@ final class ConcurrentReserveTest extends MysqlTestCase
         }
         $out['FUZEO_QUEUE_TEST_DB_USER'] = getenv('FUZEO_QUEUE_TEST_DB_USER') ?: 'root';
         $pass = getenv('FUZEO_QUEUE_TEST_DB_PASS');
-        $out['FUZEO_QUEUE_TEST_DB_PASS'] = $pass === false ? 'root' : $pass;
 
-        return $out;
+        return \Fuzeo\Queue\Tests\Support\ChildDatabase::withPassword($out, $pass === false ? 'root' : $pass);
     }
 
     /**

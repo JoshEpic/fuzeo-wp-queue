@@ -53,7 +53,10 @@ Queue::dispatch($job);
 Queue::on('fulfillment')->dispatch($job);
 Queue::later($timestamp, $job);
 Queue::on('imports')->onSite(1, 42)->dispatch($job);
+Queue::dispatchResult($job); // accepted vs unique duplicate
 ```
+
+Delayed jobs: [delayed-jobs.md](delayed-jobs.md). Recurring work: [schedules.md](schedules.md). Implement `UniqueJob` for enqueue dedupe ([unique-jobs.md](unique-jobs.md)). Use `Queue::idempotency()` for logical operations ([idempotency.md](idempotency.md)). These are separate features.
 
 With WordPress `$wpdb` present, dispatch uses the MySQL driver. Use `Queue::fake()` in tests.
 

@@ -6,6 +6,7 @@ use Fuzeo\Queue\Jobs\Origin;
 use Fuzeo\Queue\Persistence\PdoConnection;
 use Fuzeo\Queue\Queue;
 use Fuzeo\Queue\Runtime\Coordinator;
+use Fuzeo\Queue\Tests\Support\ChildDatabase;
 use Fuzeo\Queue\Tests\Support\CrashHandler;
 use Fuzeo\Queue\Tests\Support\ProcessOrderJob;
 use Fuzeo\Queue\Worker\JobExecutor;
@@ -22,12 +23,8 @@ if (!is_string($dsn) || $dsn === '') {
     exit(1);
 }
 $user = getenv('FUZEO_QUEUE_TEST_DB_USER') ?: 'root';
-$password = getenv('FUZEO_QUEUE_TEST_DB_PASS');
-if ($password === false) {
-    $password = 'root';
-}
 
-$connection = PdoConnection::fromDsn($dsn, $user, $password, 'wp_');
+$connection = PdoConnection::fromDsn($dsn, $user, ChildDatabase::passwordFromEnvironment(), 'wp_');
 Coordinator::bootForTesting(['driver' => 'mysql'], connection: $connection);
 Queue::register(ProcessOrderJob::class, new Origin('acme/shop', '1.0.0'), CrashHandler::class);
 

@@ -36,6 +36,11 @@ final class Config
         public readonly array $concurrency = [],
         /** @var list<array<string, mixed>> */
         public readonly array $rateLimits = [],
+        public readonly int $scheduleClaimLeaseSeconds = 30,
+        public readonly int $scheduleMaxCatchUp = 100,
+        public readonly int $scheduleCatchUpCutoffDays = 7,
+        public readonly int $idempotencyLeaseSeconds = 60,
+        public readonly int $idempotencyRetainSeconds = 604800,
     ) {
     }
 
@@ -67,6 +72,11 @@ final class Config
             redisNamespace: $this->string($values, 'redis_namespace', $this->redisNamespace),
             concurrency: $this->intMap($values, 'concurrency', $this->concurrency),
             rateLimits: $this->listOfMaps($values, 'rate_limits', $this->rateLimits),
+            scheduleClaimLeaseSeconds: $this->int($values, 'schedule_claim_lease_seconds', $this->scheduleClaimLeaseSeconds),
+            scheduleMaxCatchUp: $this->int($values, 'schedule_max_catch_up', $this->scheduleMaxCatchUp),
+            scheduleCatchUpCutoffDays: $this->int($values, 'schedule_catch_up_cutoff_days', $this->scheduleCatchUpCutoffDays),
+            idempotencyLeaseSeconds: $this->int($values, 'idempotency_lease_seconds', $this->idempotencyLeaseSeconds),
+            idempotencyRetainSeconds: $this->int($values, 'idempotency_retain_seconds', $this->idempotencyRetainSeconds),
         );
     }
 

@@ -8,7 +8,9 @@ use Fuzeo\Queue\Drivers\FailureStore;
 use Fuzeo\Queue\Drivers\MySql\MySqlDriver;
 use Fuzeo\Queue\Drivers\ProvidesWorkerStore;
 use Fuzeo\Queue\Drivers\StatusAware;
+use Fuzeo\Queue\Exceptions\UniqueConflictException;
 use Fuzeo\Queue\Jobs\EnvelopeRedactor;
+use Fuzeo\Queue\Schedule\SchedulerLoop;
 use Fuzeo\Queue\Persistence\SchemaOwner;
 use Fuzeo\Queue\Retention\RetentionPolicy;
 use Fuzeo\Queue\Runtime\Coordinator;
@@ -59,6 +61,147 @@ final class QueueCommand
     }
 
     /**
+     * Persistent scheduler. Dispatches due schedules as ordinary jobs.
+     *
+     * @param array<int, string> $args
+     * @param array<string, string> $assoc
+     */
+    public function scheduleWork(array $args, array $assoc): void
+    {
+        unset($args);
+        $runtime = Coordinator::get();
+        $options = WorkerOptions::fromCli($assoc, $runtime->config()->defaultQueue);
+        $loop = SchedulerLoop::fromManager($runtime, $options);
+        if (class_exists('WP_CLI')) {
+            \WP_CLI::log('Fuzeo Queue scheduler ' . $loop->schedulerId() . ' running');
+        }
+        $loop->run();
+    }
+
+    /**
+     * One-shot due schedule dispatch (cron/degraded hosting).
+     *
+     * @param array<int, string> $args
+     * @param array<string, string> $assoc
+     */
+    public function scheduleRun(array $args, array $assoc): void
+    {
+        unset($assoc);
+        $runtime = Coordinator::get();
+        $id = $args[0] ?? '';
+        $n = $id === '' ? $runtime->scheduler()->runDue() : $runtime->scheduler()->runOne($id);
+        $this->line('dispatched=' . $n);
+    }
+
+    /**
+     * List or manage schedules.
+     *
+     * @param array<int, string> $args
+     * @param array<string, string> $assoc
+     */
+    public function schedules(array $args, array $assoc): void
+    {
+        unset($assoc);
+        $runtime = Coordinator::get();
+        $action = $args[0] ?? 'list';
+        $id = $args[1] ?? ($action !== 'list' && $action !== 'enable' && $action !== 'disable' && $action !== 'show' ? $action : '');
+        if (in_array($action, ['show', 'enable', 'disable'], true)) {
+            $id = $args[1] ?? '';
+        }
+        if ($action === 'show') {
+            $schedule = $runtime->schedules()->get($id);
+            if ($schedule === null) {
+                $this->error('Unknown schedule ' . $id . '.');
+                return;
+            }
+            $this->printLines([
+                'id' => $schedule->scheduleId,
+                'name' => $schedule->name,
+                'origin' => $schedule->origin->package,
+                'job_type' => $schedule->jobType,
+                'expression' => $schedule->expression->type->value . ' ' . $schedule->expression->value,
+                'timezone' => $schedule->timezone,
+                'enabled' => $schedule->enabled ? 'yes' : 'no',
+                'blocked' => $schedule->blockedReason ?? '',
+                'next_run' => $schedule->nextRunAt->format(\DateTimeInterface::ATOM),
+                'last_run' => $schedule->lastRunAt?->format(\DateTimeInterface::ATOM) ?? '',
+                'last_result' => (string) $schedule->lastResult,
+            ]);
+            return;
+        }
+        if ($action === 'enable') {
+            $runtime->schedules()->enable($id);
+            $this->line('enabled ' . $id);
+            return;
+        }
+        if ($action === 'disable') {
+            $runtime->schedules()->disable($id);
+            $this->line('disabled ' . $id);
+            return;
+        }
+        foreach ($runtime->schedules()->all() as $schedule) {
+            $this->line(sprintf(
+                '%s name=%s origin=%s type=%s tz=%s enabled=%s next=%s last=%s result=%s blocked=%s',
+                $schedule->scheduleId,
+                $schedule->name,
+                $schedule->origin->package,
+                $schedule->jobType,
+                $schedule->timezone,
+                $schedule->enabled ? 'yes' : 'no',
+                $schedule->nextRunAt->format(\DateTimeInterface::ATOM),
+                $schedule->lastRunAt?->format(\DateTimeInterface::ATOM) ?? '-',
+                (string) $schedule->lastResult,
+                (string) $schedule->blockedReason
+            ));
+        }
+    }
+
+    /**
+     * Inspect uniqueness claims. Destructive release requires --force.
+     *
+     * @param array<int, string> $args
+     * @param array<string, string> $assoc
+     */
+    public function unique(array $args, array $assoc): void
+    {
+        $runtime = Coordinator::get();
+        $action = $args[0] ?? 'list';
+        if ($action === 'release') {
+            if (!isset($assoc['force'])) {
+                $this->error('Releasing uniqueness can allow duplicate jobs. Pass --force if you understand the risk.');
+                return;
+            }
+            $hash = $args[1] ?? '';
+            $runtime->unique()->forceRelease($hash);
+            $this->line('released ' . $hash);
+            return;
+        }
+        foreach ($runtime->unique()->list() as $row) {
+            $this->line(sprintf(
+                '%s job=%s key=%s origin=%s type=%s expires=%s',
+                $row->hash,
+                $row->jobId,
+                $row->uniqueKey,
+                $row->originPackage,
+                $row->jobType,
+                $row->expiresAt?->format(\DateTimeInterface::ATOM) ?? '-'
+            ));
+        }
+    }
+
+    /**
+     * Inspect idempotency records. Destructive reset is not provided.
+     *
+     * @param array<int, string> $args
+     * @param array<string, string> $assoc
+     */
+    public function idempotency(array $args, array $assoc): void
+    {
+        unset($args, $assoc);
+        $this->line('Idempotency diagnostics are lookup-based. Destructive reset is not provided because it can duplicate external side effects.');
+    }
+
+    /**
      * @param array<int, string> $args
      * @param array<string, string> $assoc
      */
@@ -94,6 +237,12 @@ final class QueueCommand
         }
         $previous = $runtime->config()->driver;
         $lines['backend'] = $previous;
+        $schedulers = $runtime->schedules()->store()->schedulers();
+        $lines['schedulers'] = (string) count($schedulers);
+        if ($schedulers !== []) {
+            $latest = $schedulers[0]['last_heartbeat_at'] ?? '';
+            $lines['scheduler_heartbeat'] = is_string($latest) ? $latest : '';
+        }
         $this->printLines($lines);
     }
 
@@ -285,7 +434,12 @@ final class QueueCommand
             $this->error('Provide a job id.');
             return;
         }
-        $revived = $store->revive($id);
+        try {
+            $revived = $store->revive($id);
+        } catch (UniqueConflictException $exception) {
+            $this->error('Retry refused: unique key is held by ' . $exception->existingJobId . '.');
+            return;
+        }
         $this->line('retried ' . $revived->jobId . ' state=' . $revived->state->value);
     }
 

@@ -8,7 +8,10 @@ use Fuzeo\Queue\Jobs\Envelope;
 
 final class EnqueuedJob
 {
-    public function __construct(public readonly Envelope $envelope)
-    {
+    public function __construct(
+        public readonly Envelope $envelope,
+        public readonly bool $accepted = true,
+        public readonly ?string $duplicateOf = null,
+    ) {
     }
 }

@@ -6,9 +6,9 @@ Schema v3 adds `fuzeo_queue_attempts`. A 0.2 worker may still be running when 0.
 
 ## Decision
 
-`SchemaOwner::CURRENT_VERSION = 3`. Boot runs migrations 1→2→3. `MySqlDriver::reserve` refuses unless the stored schema version **equals** 3. That blocks a future 0.4 schema from being mutated by a 0.3 worker, and blocks a 0.3 worker from reserving if migrations have not finished (version still 2).
+`SchemaOwner::CURRENT_VERSION = 4`. Boot runs migrations through 4. `MySqlDriver::reserve` and `SchedulerLoop` refuse unless the stored schema version **equals** 4. That blocks a 0.4 process from mutating v4 rows, and blocks a 0.5 process if migrations have not finished.
 
-0.2 workers do not have this check. Operators **must restart workers** after upgrading so 0.2 processes do not `fail()` jobs into `failed` instead of retrying. Compatibility series remains `1` (autoload/runtime selection unchanged).
+Operators **must restart workers and schedulers** after upgrading. Compatibility series remains `1` (autoload/runtime selection unchanged).
 
 ## Alternatives
 
@@ -17,7 +17,7 @@ Schema v3 adds `fuzeo_queue_attempts`. A 0.2 worker may still be running when 0.
 
 ## Consequences
 
-Documented deploy order: update package → request/CLI boot migrates → restart `wp fuzeo-queue work`. Mixed 0.2/0.3 fleets can persist `failed` instead of retry; not silently corrupt SKIP LOCKED reservation, but retry semantics differ.
+Documented deploy order: update package → request/CLI boot migrates → restart `wp fuzeo-queue work` and `wp fuzeo-queue schedule-work`. Mixed fleets can persist `failed` instead of retry and can miss schedule claims.
 
 ## Future
 

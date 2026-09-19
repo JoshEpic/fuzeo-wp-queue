@@ -29,4 +29,14 @@ final class Dates
 
         return $parsed->setTimezone(new \DateTimeZone('UTC'));
     }
+
+    public static function fromDatabase(string $value): \DateTimeImmutable
+    {
+        return (new \DateTimeImmutable($value, new \DateTimeZone('UTC')))->setTimezone(new \DateTimeZone('UTC'));
+    }
+
+    public static function toDatabase(\DateTimeInterface $value): string
+    {
+        return self::utc($value)->format('Y-m-d H:i:s.u');
+    }
 }

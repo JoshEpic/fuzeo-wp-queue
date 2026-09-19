@@ -100,6 +100,11 @@ final class ConfigRepository
             'FUZEO_QUEUE_REDIS_NAMESPACE' => 'redis_namespace',
             'FUZEO_QUEUE_CONCURRENCY' => 'concurrency',
             'FUZEO_QUEUE_RATE_LIMITS' => 'rate_limits',
+            'FUZEO_QUEUE_SCHEDULE_CLAIM_LEASE_SECONDS' => 'schedule_claim_lease_seconds',
+            'FUZEO_QUEUE_SCHEDULE_MAX_CATCH_UP' => 'schedule_max_catch_up',
+            'FUZEO_QUEUE_SCHEDULE_CATCH_UP_CUTOFF_DAYS' => 'schedule_catch_up_cutoff_days',
+            'FUZEO_QUEUE_IDEMPOTENCY_LEASE_SECONDS' => 'idempotency_lease_seconds',
+            'FUZEO_QUEUE_IDEMPOTENCY_RETAIN_SECONDS' => 'idempotency_retain_seconds',
         ];
 
         $values = [];

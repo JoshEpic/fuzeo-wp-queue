@@ -6,7 +6,7 @@ Workers crash, leases expire, and deploys interrupt handlers. Exactly-once requi
 
 ## Decision
 
-The architecture targets **at-least-once** execution. Duplicate delivery is expected. Jobs should be idempotent (`idempotency_key` / `unique_key` exist on the envelope for later drivers).
+The architecture targets **at-least-once** execution. Duplicate delivery is expected. Jobs should be idempotent. Phase 5 adds `UniqueJob` (dispatch) and `Idempotency` store (logical operations). Neither is exactly-once delivery.
 
 Reservations carry a token. ACK, release, fail, and extendLease require the active token so a stale worker cannot complete work another worker recovered.
 

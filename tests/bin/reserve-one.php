@@ -6,6 +6,7 @@ use Fuzeo\Queue\Drivers\MySql\MySqlDriver;
 use Fuzeo\Queue\Drivers\ReserveRequest;
 use Fuzeo\Queue\Persistence\PdoConnection;
 use Fuzeo\Queue\Runtime\Coordinator;
+use Fuzeo\Queue\Tests\Support\ChildDatabase;
 
 require dirname(__DIR__, 2) . '/vendor/autoload.php';
 
@@ -15,14 +16,10 @@ if (!is_string($dsn) || $dsn === '') {
     exit(1);
 }
 $user = getenv('FUZEO_QUEUE_TEST_DB_USER') ?: 'root';
-$password = getenv('FUZEO_QUEUE_TEST_DB_PASS');
-if ($password === false) {
-    $password = 'root';
-}
 $worker = $argv[1] ?? 'worker';
 $sleep = (int) ($argv[2] ?? 0);
 
-$connection = PdoConnection::fromDsn($dsn, $user, $password, 'wp_');
+$connection = PdoConnection::fromDsn($dsn, $user, ChildDatabase::passwordFromEnvironment(), 'wp_');
 Coordinator::bootForTesting(['driver' => 'mysql'], connection: $connection);
 $driver = Coordinator::get()->driver();
 if (!$driver instanceof MySqlDriver) {

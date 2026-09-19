@@ -12,6 +12,9 @@ use Fuzeo\Queue\Drivers\DriverHealth;
 use Fuzeo\Queue\Drivers\EnqueuedJob;
 use Fuzeo\Queue\Drivers\Failure;
 use Fuzeo\Queue\Drivers\FailureStore;
+use Fuzeo\Queue\Drivers\ProvidesIdempotencyStore;
+use Fuzeo\Queue\Drivers\ProvidesScheduleStore;
+use Fuzeo\Queue\Drivers\ProvidesUniqueStore;
 use Fuzeo\Queue\Drivers\ProvidesWorkerStore;
 use Fuzeo\Queue\Drivers\QueueDriver;
 use Fuzeo\Queue\Drivers\Reconnectable;
@@ -33,14 +36,22 @@ use Fuzeo\Queue\Redis\RedisScripts;
 use Fuzeo\Queue\Redis\RedisSettings;
 use Fuzeo\Queue\Redis\RedisWorkerStore;
 use Fuzeo\Queue\Redis\ScriptCache;
-use Fuzeo\Queue\Retry\AttemptRecord;
-use Fuzeo\Queue\Retention\PruneResult;
-use Fuzeo\Queue\Retention\RetentionPolicy;
 use Fuzeo\Queue\Support\Dates;
 use Fuzeo\Queue\Support\SystemClock;
+use Fuzeo\Queue\Retention\PruneResult;
+use Fuzeo\Queue\Retention\RetentionPolicy;
+use Fuzeo\Queue\Idempotency\IdempotencyStore;
+use Fuzeo\Queue\Idempotency\RedisIdempotencyStore;
+use Fuzeo\Queue\Schedule\RedisScheduleStore;
+use Fuzeo\Queue\Schedule\ScheduleStore;
+use Fuzeo\Queue\Unique\RedisUniqueStore;
+use Fuzeo\Queue\Unique\UniqueIdentity;
+use Fuzeo\Queue\Unique\UniquePolicy;
+use Fuzeo\Queue\Unique\UniqueStore;
+use Fuzeo\Queue\Retry\AttemptRecord;
 use Fuzeo\Queue\Worker\WorkerStore;
 
-final class RedisDriver implements QueueDriver, FailureStore, ReliableAcknowledger, Reconnectable, ProvidesWorkerStore, StatusAware
+final class RedisDriver implements QueueDriver, FailureStore, ReliableAcknowledger, Reconnectable, ProvidesWorkerStore, StatusAware, ProvidesUniqueStore, ProvidesIdempotencyStore, ProvidesScheduleStore
 {
     public const MIN_REDIS_VERSION = '6.0.0';
 
@@ -49,6 +60,12 @@ final class RedisDriver implements QueueDriver, FailureStore, ReliableAcknowledg
     private readonly RedisKeys $keys;
 
     private readonly AdmissionPolicy $admission;
+
+    private readonly RedisUniqueStore $uniques;
+
+    private readonly RedisIdempotencyStore $idempotency;
+
+    private readonly RedisScheduleStore $schedules;
 
     private int $lastThrottleWait = 0;
 
@@ -61,8 +78,26 @@ final class RedisDriver implements QueueDriver, FailureStore, ReliableAcknowledg
         $this->keys = new RedisKeys($settings->prefix());
         $this->scripts = new ScriptCache($redis);
         $this->admission = AdmissionPolicy::fromConfig($config);
+        $this->uniques = new RedisUniqueStore($redis, $this->keys, $this->scripts);
+        $this->idempotency = new RedisIdempotencyStore($redis, $this->keys, $this->scripts, $clock);
+        $this->schedules = new RedisScheduleStore($redis, $this->keys, $clock);
         $this->assertVersion();
-        $this->redis->command('HSET', [$this->keys->meta(), 'driver', 'redis', 'package', 'fuzeowp/queue']);
+        $this->redis->command('HSET', [$this->keys->meta(), 'driver', 'redis', 'package', 'fuzeowp/queue', 'schema_version', '4']);
+    }
+
+    public function uniqueStore(): UniqueStore
+    {
+        return $this->uniques;
+    }
+
+    public function idempotencyStore(): IdempotencyStore
+    {
+        return $this->idempotency;
+    }
+
+    public function scheduleStore(): ScheduleStore
+    {
+        return $this->schedules;
     }
 
     public function client(): RedisClient
@@ -93,7 +128,10 @@ final class RedisDriver implements QueueDriver, FailureStore, ReliableAcknowledg
         QueueName::assertValid($envelope->queue);
         $now = $this->clock->now()->getTimestamp();
         $available = $envelope->availableAt->getTimestamp();
-        $this->scripts->run(
+        $identity = UniqueIdentity::forJob($envelope);
+        $uniqueKey = $identity !== null ? $this->keys->unique($identity->hash) : '';
+        $ttl = UniquePolicy::ttlSeconds($envelope) ?? 0;
+        $raw = $this->scripts->run(
             'enqueue',
             RedisScripts::ENQUEUE,
             [
@@ -111,8 +149,22 @@ final class RedisDriver implements QueueDriver, FailureStore, ReliableAcknowledg
                 $envelope->queue,
                 $envelope->jobId,
                 (string) $now,
+                $uniqueKey,
+                (string) $ttl,
             ]
         );
+        $result = is_array($raw) ? $raw : [1, $envelope->jobId];
+        $accepted = (int) ($result[0] ?? 1) === 1;
+        if (!$accepted) {
+            $existingId = (string) ($result[1] ?? '');
+            try {
+                $existing = $existingId !== '' ? $this->job($existingId) : $envelope;
+            } catch (DriverException) {
+                $existing = $envelope;
+            }
+
+            return new EnqueuedJob($existing, false, $existingId !== '' ? $existingId : null);
+        }
 
         return new EnqueuedJob($envelope);
     }
@@ -362,6 +414,8 @@ final class RedisDriver implements QueueDriver, FailureStore, ReliableAcknowledg
     {
         $now = $this->clock->now();
         $current = $this->job($jobId);
+        $identity = UniqueIdentity::forJob($current);
+        $uniqueKey = $identity !== null ? $this->keys->unique($identity->hash) : '';
         $result = $this->scripts->run(
             'revive',
             RedisScripts::REVIVE,
@@ -371,6 +425,7 @@ final class RedisDriver implements QueueDriver, FailureStore, ReliableAcknowledg
                 (string) $now->getTimestamp(),
                 $this->readyScore($current->priority, $now->getTimestamp()),
                 Dates::toAtom($now),
+                $uniqueKey,
             ]
         );
         if ((int) $result === 0) {
@@ -378,6 +433,14 @@ final class RedisDriver implements QueueDriver, FailureStore, ReliableAcknowledg
         }
         if ((int) $result === -1) {
             throw new DriverException('Job ' . $jobId . ' is not dead or failed.');
+        }
+        if ((int) $result === -2) {
+            $held = $this->redis->command('GET', [$uniqueKey]);
+            throw new \Fuzeo\Queue\Exceptions\UniqueConflictException(
+                'Cannot retry job ' . $jobId . '; unique key is held by ' . (string) $held . '.',
+                is_string($held) ? $held : '',
+                $identity?->uniqueKey ?? '',
+            );
         }
 
         return $this->job($jobId);
@@ -505,7 +568,7 @@ final class RedisDriver implements QueueDriver, FailureStore, ReliableAcknowledg
         return new DriverCapabilities(
             priorities: true,
             blockingReserve: true,
-            atomicUniqueness: false,
+            atomicUniqueness: true,
             distributedLocks: true,
             delayedJobs: true,
             advancedMetrics: false,
@@ -513,6 +576,8 @@ final class RedisDriver implements QueueDriver, FailureStore, ReliableAcknowledg
             atomicRateLimits: true,
             queueConcurrency: true,
             highConcurrency: true,
+            scheduling: true,
+            idempotency: true,
         );
     }
 
