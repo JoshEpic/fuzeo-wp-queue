@@ -72,6 +72,11 @@ final class JobRegistry
         );
     }
 
+    public function forget(string $type): void
+    {
+        unset($this->jobs[JobType::normalize($type)]);
+    }
+
     public function has(string $type): bool
     {
         return isset($this->jobs[JobType::normalize($type)]);

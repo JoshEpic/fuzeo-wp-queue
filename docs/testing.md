@@ -25,6 +25,7 @@ public function test_checkout_dispatches_processing(): void
     Queue::fake()->assertDispatchedWithPayload(ProcessOrder::class, ['order_id' => 123]);
     Queue::fake()->assertDispatchedFrom(ProcessOrder::class, 'acme/shop');
     Queue::fake()->assertDispatchedForSite(ProcessOrder::class, 42);
+    Queue::fake()->assertMaxAttempts(ProcessOrder::class, 5);
 }
 ```
 

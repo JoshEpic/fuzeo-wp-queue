@@ -135,4 +135,20 @@ final class PendingDispatch
 
         return $this->dispatcher->dispatch($job, $this->options);
     }
+
+    public function withMaxAttempts(int $maxAttempts): self
+    {
+        $clone = clone $this;
+        $clone->options = $this->options->withMaxAttempts($maxAttempts);
+
+        return $clone;
+    }
+
+    public function withRetryPolicy(\Fuzeo\Queue\Retry\RetryPolicy $policy): self
+    {
+        $clone = clone $this;
+        $clone->options = $this->options->withRetryPolicy($policy);
+
+        return $clone;
+    }
 }

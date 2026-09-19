@@ -4,6 +4,6 @@ declare(strict_types=1);
 
 namespace Fuzeo\Queue\Exceptions;
 
-class SiteUnavailableException extends QueueException
+class SiteUnavailableException extends TerminalException
 {
 }

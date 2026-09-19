@@ -23,6 +23,8 @@ wp fuzeo-queue work --queue=high,default --sleep=1 --timeout=60 --lease=90 --mem
 wp fuzeo-queue status
 wp fuzeo-queue workers
 wp fuzeo-queue queues
+wp fuzeo-queue failed
+wp fuzeo-queue prune
 ```
 
 Payloads are not printed.

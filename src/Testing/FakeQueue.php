@@ -131,6 +131,19 @@ final class FakeQueue
         );
     }
 
+    public function assertMaxAttempts(string $jobTypeOrClass, int $maxAttempts): void
+    {
+        foreach ($this->dispatched($jobTypeOrClass) as $envelope) {
+            if ($envelope->maxAttempts === $maxAttempts) {
+                return;
+            }
+        }
+
+        throw new \Fuzeo\Queue\Exceptions\QueueException(
+            'Job ' . $jobTypeOrClass . ' was not dispatched with max attempts ' . $maxAttempts . '.'
+        );
+    }
+
     /**
      * @param array<string, mixed> $subset
      */

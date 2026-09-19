@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Fuzeo\Queue\Jobs;
 
+use Fuzeo\Queue\Support\SecretRedactor;
+
 final class EnvelopeRedactor
 {
     /**
@@ -19,6 +21,8 @@ final class EnvelopeRedactor
             'schema_version' => $envelope->schemaVersion,
             'queue' => $envelope->queue,
             'state' => $envelope->state->value,
+            'attempt' => $envelope->attempt,
+            'max_attempts' => $envelope->maxAttempts,
             'network_id' => $envelope->context->networkId,
             'site_id' => $envelope->context->siteId,
             'origin' => $envelope->origin->package,
@@ -26,7 +30,7 @@ final class EnvelopeRedactor
         ];
 
         if ($includePayload) {
-            $summary['payload'] = $envelope->payload;
+            $summary['payload'] = (new SecretRedactor())->redactMap($envelope->payload);
         }
 
         return $summary;

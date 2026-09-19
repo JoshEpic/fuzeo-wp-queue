@@ -14,7 +14,7 @@ final class SchemaOwner
     public const OPTION_LOCK = 'fuzeo_queue_schema_lock';
 
     /**
-     * Production schema version. 2 is jobs + workers + metadata tables.
+     * Production schema version. 3 adds attempt/failure history.
      */
-    public const CURRENT_VERSION = 2;
+    public const CURRENT_VERSION = 3;
 }

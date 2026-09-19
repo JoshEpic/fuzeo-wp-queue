@@ -21,4 +21,4 @@ Side effects must be safe to retry. Phase 1 documents this; retries/backoff them
 
 ## Future implications
 
-Poison queues and dead-lettering will still be at-least-once.
+Poison queues and dead-lettering remain at-least-once. See [retries](../retries.md).

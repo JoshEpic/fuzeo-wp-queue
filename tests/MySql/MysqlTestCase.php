@@ -53,7 +53,7 @@ abstract class MysqlTestCase extends TestCase
 
     protected function dropTables(): void
     {
-        foreach (['fuzeo_queue_jobs', 'fuzeo_queue_workers', 'fuzeo_queue_meta'] as $table) {
+        foreach (['fuzeo_queue_jobs', 'fuzeo_queue_workers', 'fuzeo_queue_attempts', 'fuzeo_queue_meta'] as $table) {
             try {
                 $this->connection->execute('DROP TABLE IF EXISTS `' . $this->connection->prefix() . $table . '`');
             } catch (\Throwable) {

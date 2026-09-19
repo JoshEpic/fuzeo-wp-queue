@@ -25,5 +25,8 @@ Precedence, highest first:
 | `worker_max_runtime` | `FUZEO_QUEUE_WORKER_MAX_RUNTIME` | `0` |
 | `heartbeat_interval` | `FUZEO_QUEUE_HEARTBEAT_INTERVAL` | `10` |
 | `stale_worker_threshold` | `FUZEO_QUEUE_STALE_WORKER_THRESHOLD` | `30` |
+| `completed_retention_days` | `FUZEO_QUEUE_COMPLETED_RETENTION_DAYS` | `7` |
+| `dead_retention_days` | `FUZEO_QUEUE_DEAD_RETENTION_DAYS` | `30` |
+| `default_jitter_percent` | `FUZEO_QUEUE_DEFAULT_JITTER_PERCENT` | `0` |
 
 Drivers: `mysql` (production when `$wpdb` exists), `memory` (tests), `unavailable` (fail closed), plus `Queue::fake()`.

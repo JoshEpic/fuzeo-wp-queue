@@ -10,6 +10,7 @@ final class Schema
 {
     public const JOBS = 'fuzeo_queue_jobs';
     public const WORKERS = 'fuzeo_queue_workers';
+    public const ATTEMPTS = 'fuzeo_queue_attempts';
     public const META = 'fuzeo_queue_meta';
     public const LOCK = 'fuzeo_queue_schema';
     public const META_VERSION = 'schema_version';

@@ -10,6 +10,7 @@ use Fuzeo\Queue\Drivers\DriverCapabilities;
 use Fuzeo\Queue\Drivers\DriverHealth;
 use Fuzeo\Queue\Drivers\EnqueuedJob;
 use Fuzeo\Queue\Drivers\Failure;
+use Fuzeo\Queue\Drivers\FailureStore;
 use Fuzeo\Queue\Drivers\QueueDriver;
 use Fuzeo\Queue\Drivers\ReleaseOptions;
 use Fuzeo\Queue\Drivers\Reservation;
@@ -21,14 +22,19 @@ use Fuzeo\Queue\Jobs\Envelope;
 use Fuzeo\Queue\Jobs\JobState;
 use Fuzeo\Queue\Jobs\QueueName;
 use Fuzeo\Queue\Persistence\Connection;
+use Fuzeo\Queue\Persistence\DatabaseMigrationRepository;
 use Fuzeo\Queue\Persistence\Schema;
+use Fuzeo\Queue\Persistence\SchemaOwner;
+use Fuzeo\Queue\Retry\AttemptRecord;
+use Fuzeo\Queue\Retention\PruneResult;
+use Fuzeo\Queue\Retention\RetentionPolicy;
 use Fuzeo\Queue\Support\Dates;
 use Fuzeo\Queue\Support\SystemClock;
 
 /**
  * Durable InnoDB driver. Reservation uses SELECT ... FOR UPDATE SKIP LOCKED.
  */
-final class MySqlDriver implements QueueDriver
+final class MySqlDriver implements QueueDriver, FailureStore
 {
     public function __construct(
         private readonly Connection $connection,
@@ -86,6 +92,7 @@ final class MySqlDriver implements QueueDriver
                 'MySQL/MariaDB must support FOR UPDATE SKIP LOCKED (MySQL 8.0.1+ or MariaDB 10.6+).'
             );
         }
+        $this->assertSchemaCompatible();
 
         $now = $this->clock->now();
         $leaseExpires = $now->add(new \DateInterval('PT' . $request->leaseSeconds . 'S'));
@@ -119,6 +126,12 @@ final class MySqlDriver implements QueueDriver
             }
 
             $envelope = $this->hydrate($row);
+            if ($envelope->attempt >= $envelope->maxAttempts) {
+                $this->deadLetterLockedRow($envelope, $now);
+                $this->connection->commit();
+
+                return null;
+            }
             $attempt = $envelope->attempt + 1;
             $reserved = $envelope->withAttempt($attempt);
             if ($reserved->state === JobState::Pending) {
@@ -244,6 +257,192 @@ final class MySqlDriver implements QueueDriver
         }
     }
 
+    public function settleOutcome(
+        Reservation $reservation,
+        AttemptRecord $record,
+        JobState $nextState,
+        ?\DateTimeImmutable $availableAt,
+    ): void {
+        if ($nextState !== JobState::Pending && $nextState !== JobState::Dead) {
+            throw new DriverException('settleOutcome only supports pending retry or dead.');
+        }
+
+        $now = $this->clock->now();
+        $this->connection->begin();
+        try {
+            if ($nextState === JobState::Pending) {
+                $when = $availableAt ?? $now;
+                $updated = $reservation->envelope->withState(JobState::Pending)->withAvailableAt($when);
+                $affected = $this->connection->execute(
+                    'UPDATE ' . $this->jobs() . '
+                     SET `state` = ?, `available_at` = ?, `updated_at` = ?, `envelope` = ?,
+                         `failure_class` = ?, `failure_message` = ?,
+                         `reservation_token` = NULL, `lease_expires_at` = NULL, `reserved_at` = NULL, `worker_id` = NULL
+                     WHERE `job_id` = ? AND `reservation_token` = ? AND `state` = ?',
+                    [
+                        JobState::Pending->value,
+                        $this->date($when),
+                        $this->date($now),
+                        $this->encodeEnvelope($updated),
+                        $record->failureClass,
+                        $record->sanitizedMessage,
+                        $reservation->envelope->jobId,
+                        $reservation->token->value,
+                        JobState::Reserved->value,
+                    ]
+                );
+            } else {
+                $updated = $reservation->envelope->withState(JobState::Dead);
+                $affected = $this->connection->execute(
+                    'UPDATE ' . $this->jobs() . '
+                     SET `state` = ?, `failed_at` = ?, `updated_at` = ?, `envelope` = ?,
+                         `failure_class` = ?, `failure_message` = ?,
+                         `reservation_token` = NULL, `lease_expires_at` = NULL
+                     WHERE `job_id` = ? AND `reservation_token` = ? AND `state` = ?',
+                    [
+                        JobState::Dead->value,
+                        $this->date($now),
+                        $this->date($now),
+                        $this->encodeEnvelope($updated),
+                        $record->failureClass,
+                        $record->sanitizedMessage,
+                        $reservation->envelope->jobId,
+                        $reservation->token->value,
+                        JobState::Reserved->value,
+                    ]
+                );
+            }
+
+            if ($affected !== 1) {
+                $this->connection->rollBack();
+                throw new DriverException(
+                    'Reservation token is not the active owner of job ' . $reservation->envelope->jobId . '.'
+                );
+            }
+
+            $this->insertAttempt($record);
+            $this->connection->commit();
+        } catch (\Throwable $exception) {
+            $this->connection->rollBack();
+            throw $exception;
+        }
+    }
+
+    public function attemptsFor(string $jobId): array
+    {
+        $rows = $this->connection->select(
+            'SELECT * FROM ' . $this->attempts() . ' WHERE `job_id` = ? ORDER BY `attempt` ASC, `failed_at` ASC',
+            [$jobId]
+        );
+        $out = [];
+        foreach ($rows as $row) {
+            $out[] = $this->hydrateAttempt($row);
+        }
+
+        return $out;
+    }
+
+    public function listStopped(int $limit = 50, int $offset = 0): array
+    {
+        $rows = $this->connection->select(
+            'SELECT * FROM ' . $this->jobs() . '
+             WHERE `state` IN (?, ?)
+             ORDER BY COALESCE(`failed_at`, `updated_at`) DESC
+             LIMIT ' . (int) $limit . ' OFFSET ' . (int) $offset,
+            [JobState::Dead->value, JobState::Failed->value]
+        );
+        $out = [];
+        foreach ($rows as $row) {
+            $out[] = $this->hydrate($row);
+        }
+
+        return $out;
+    }
+
+    public function revive(string $jobId): Envelope
+    {
+        $now = $this->clock->now();
+        $this->connection->begin();
+        try {
+            $row = $this->connection->selectOne(
+                'SELECT * FROM ' . $this->jobs() . ' WHERE `job_id` = ? FOR UPDATE',
+                [$jobId]
+            );
+            if ($row === null) {
+                $this->connection->rollBack();
+                throw new DriverException('Unknown job ' . $jobId . '.');
+            }
+            $current = $this->hydrate($row);
+            if ($current->state !== JobState::Dead && $current->state !== JobState::Failed) {
+                $this->connection->rollBack();
+                throw new DriverException('Job ' . $jobId . ' is not dead or failed.');
+            }
+            $replay = (int) ($current->metadata['_replay'] ?? 0) + 1;
+            $metadata = $current->metadata;
+            $metadata['_replay'] = $replay;
+            $revived = $current
+                ->withState(JobState::Pending)
+                ->resetAttempts()
+                ->withAvailableAt($now)
+                ->withMetadata($metadata);
+            $affected = $this->connection->execute(
+                'UPDATE ' . $this->jobs() . '
+                 SET `state` = ?, `available_at` = ?, `updated_at` = ?, `envelope` = ?, `attempt` = 0,
+                     `failed_at` = NULL, `reservation_token` = NULL, `lease_expires_at` = NULL,
+                     `reserved_at` = NULL, `worker_id` = NULL
+                 WHERE `job_id` = ? AND `state` IN (?, ?)',
+                [
+                    JobState::Pending->value,
+                    $this->date($now),
+                    $this->date($now),
+                    $this->encodeEnvelope($revived),
+                    $jobId,
+                    JobState::Dead->value,
+                    JobState::Failed->value,
+                ]
+            );
+            if ($affected !== 1) {
+                $this->connection->rollBack();
+                throw new DriverException('Unable to revive job ' . $jobId . '.');
+            }
+            $this->connection->commit();
+
+            return $revived;
+        } catch (\Throwable $exception) {
+            $this->connection->rollBack();
+            throw $exception;
+        }
+    }
+
+    public function prune(RetentionPolicy $policy, int $batchSize = 500): PruneResult
+    {
+        $batchSize = max(1, min(5000, $batchSize));
+        $now = $this->clock->now();
+        $completed = $this->pruneState(
+            JobState::Completed,
+            'completed_at',
+            $policy->completedBefore($now),
+            $batchSize
+        );
+        $dead = $this->pruneStates(
+            [JobState::Dead, JobState::Failed],
+            $policy->deadBefore($now),
+            $batchSize
+        );
+
+        return new PruneResult($completed['jobs'], $dead['jobs'], $completed['attempts'] + $dead['attempts']);
+    }
+
+    public function retryingCount(): int
+    {
+        $row = $this->connection->selectOne(
+            'SELECT COUNT(*) AS `c` FROM ' . $this->jobs() . ' WHERE `state` = ? AND `available_at` > ?',
+            [JobState::Pending->value, $this->date($this->clock->now())]
+        );
+
+        return (int) ($row['c'] ?? 0);
+    }
+
     public function extendLease(Reservation $reservation, \DateInterval $extension): Reservation
     {
         $now = $this->clock->now();
@@ -365,6 +564,11 @@ final class MySqlDriver implements QueueDriver
         return $this->hydrate($row);
     }
 
+    public function job(string $jobId): Envelope
+    {
+        return $this->get($jobId);
+    }
+
     /**
      * ACK that must not be treated as success when the database is unreachable.
      */
@@ -392,6 +596,179 @@ final class MySqlDriver implements QueueDriver
     private function workers(): string
     {
         return Schema::quoteTable($this->connection->prefix(), Schema::WORKERS);
+    }
+
+    private function attempts(): string
+    {
+        return Schema::quoteTable($this->connection->prefix(), Schema::ATTEMPTS);
+    }
+
+    private function assertSchemaCompatible(): void
+    {
+        $version = (new DatabaseMigrationRepository($this->connection))->currentVersion();
+        if ($version !== SchemaOwner::CURRENT_VERSION) {
+            throw new DriverException(
+                'Queue schema version is ' . $version . '; this worker requires '
+                . SchemaOwner::CURRENT_VERSION . '. Restart workers after upgrading fuzeowp/queue.'
+            );
+        }
+    }
+
+    private function deadLetterLockedRow(Envelope $envelope, \DateTimeImmutable $now): void
+    {
+        $dead = $envelope->state === JobState::Dead ? $envelope : $envelope->withState(JobState::Dead);
+        $this->connection->execute(
+            'UPDATE ' . $this->jobs() . '
+             SET `state` = ?, `failed_at` = ?, `updated_at` = ?, `envelope` = ?,
+                 `reservation_token` = NULL, `lease_expires_at` = NULL, `reserved_at` = NULL, `worker_id` = NULL
+             WHERE `job_id` = ?',
+            [
+                JobState::Dead->value,
+                $this->date($now),
+                $this->date($now),
+                $this->encodeEnvelope($dead),
+                $envelope->jobId,
+            ]
+        );
+    }
+
+    private function insertAttempt(AttemptRecord $record): void
+    {
+        $this->connection->execute(
+            'INSERT INTO ' . $this->attempts() . ' (
+                attempt_id, job_id, attempt, outcome, job_type, queue, worker_id, reservation_token,
+                origin_package, network_id, site_id, scope, failure_class, sanitized_message, sanitized_trace,
+                will_retry, next_available_at, terminal_reason, failed_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [
+                $record->attemptId,
+                $record->jobId,
+                $record->attempt,
+                $record->outcome,
+                $record->jobType,
+                $record->queue,
+                $record->workerId,
+                $record->reservationToken,
+                $record->originPackage,
+                $record->networkId,
+                $record->siteId,
+                $record->scope,
+                $record->failureClass,
+                $record->sanitizedMessage,
+                $record->sanitizedTrace,
+                $record->willRetry ? 1 : 0,
+                $record->nextAvailableAt !== null ? $this->date($record->nextAvailableAt) : null,
+                $record->terminalReason,
+                $this->date($record->failedAt),
+            ]
+        );
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     */
+    private function hydrateAttempt(array $row): AttemptRecord
+    {
+        $next = $row['next_available_at'] ?? null;
+        $failedAt = $row['failed_at'] ?? null;
+        if (!is_string($failedAt) || $failedAt === '') {
+            throw new DriverException('Attempt row is missing failed_at.');
+        }
+
+        return new AttemptRecord(
+            attemptId: (string) ($row['attempt_id'] ?? ''),
+            jobId: (string) ($row['job_id'] ?? ''),
+            attempt: (int) ($row['attempt'] ?? 0),
+            outcome: (string) ($row['outcome'] ?? ''),
+            jobType: (string) ($row['job_type'] ?? ''),
+            queue: (string) ($row['queue'] ?? ''),
+            workerId: isset($row['worker_id']) && is_string($row['worker_id']) ? $row['worker_id'] : null,
+            reservationToken: isset($row['reservation_token']) && is_string($row['reservation_token']) ? $row['reservation_token'] : null,
+            originPackage: (string) ($row['origin_package'] ?? ''),
+            networkId: (int) ($row['network_id'] ?? 0),
+            siteId: (int) ($row['site_id'] ?? 0),
+            scope: (string) ($row['scope'] ?? ''),
+            failureClass: isset($row['failure_class']) && is_string($row['failure_class']) ? $row['failure_class'] : null,
+            sanitizedMessage: (string) ($row['sanitized_message'] ?? ''),
+            sanitizedTrace: (string) ($row['sanitized_trace'] ?? ''),
+            willRetry: (int) ($row['will_retry'] ?? 0) === 1,
+            nextAvailableAt: is_string($next) && $next !== '' ? Dates::fromAtom(str_replace(' ', 'T', $next)) : null,
+            terminalReason: isset($row['terminal_reason']) && is_string($row['terminal_reason']) ? $row['terminal_reason'] : null,
+            failedAt: Dates::fromAtom(str_replace(' ', 'T', $failedAt)),
+        );
+    }
+
+    /**
+     * @return array{jobs: int, attempts: int}
+     */
+    private function pruneState(JobState $state, string $timestampColumn, \DateTimeImmutable $before, int $limit): array
+    {
+        if (!in_array($timestampColumn, ['completed_at', 'failed_at', 'updated_at'], true)) {
+            throw new DriverException('Invalid prune timestamp column.');
+        }
+        $rows = $this->connection->select(
+            'SELECT `job_id` FROM ' . $this->jobs() . '
+             WHERE `state` = ? AND `' . $timestampColumn . '` IS NOT NULL AND `' . $timestampColumn . '` <= ?
+             LIMIT ' . $limit,
+            [$state->value, $this->date($before)]
+        );
+
+        return $this->deleteJobRows($rows);
+    }
+
+    /**
+     * @param list<JobState> $states
+     * @return array{jobs: int, attempts: int}
+     */
+    private function pruneStates(array $states, \DateTimeImmutable $before, int $limit): array
+    {
+        $placeholders = implode(',', array_fill(0, count($states), '?'));
+        $params = [];
+        foreach ($states as $state) {
+            $params[] = $state->value;
+        }
+        $params[] = $this->date($before);
+        $rows = $this->connection->select(
+            'SELECT `job_id` FROM ' . $this->jobs() . '
+             WHERE `state` IN (' . $placeholders . ')
+               AND COALESCE(`failed_at`, `updated_at`) <= ?
+             LIMIT ' . $limit,
+            $params
+        );
+
+        return $this->deleteJobRows($rows);
+    }
+
+    /**
+     * @param list<array<string, mixed>> $rows
+     * @return array{jobs: int, attempts: int}
+     */
+    private function deleteJobRows(array $rows): array
+    {
+        if ($rows === []) {
+            return ['jobs' => 0, 'attempts' => 0];
+        }
+        $ids = [];
+        foreach ($rows as $row) {
+            $id = $row['job_id'] ?? null;
+            if (is_string($id) && $id !== '') {
+                $ids[] = $id;
+            }
+        }
+        if ($ids === []) {
+            return ['jobs' => 0, 'attempts' => 0];
+        }
+        $placeholders = implode(',', array_fill(0, count($ids), '?'));
+        $attempts = $this->connection->execute(
+            'DELETE FROM ' . $this->attempts() . ' WHERE `job_id` IN (' . $placeholders . ')',
+            $ids
+        );
+        $jobs = $this->connection->execute(
+            'DELETE FROM ' . $this->jobs() . ' WHERE `job_id` IN (' . $placeholders . ')',
+            $ids
+        );
+
+        return ['jobs' => $jobs, 'attempts' => $attempts];
     }
 
     /**

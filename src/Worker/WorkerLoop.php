@@ -7,20 +7,23 @@ namespace Fuzeo\Queue\Worker;
 use Fuzeo\Queue\Contracts\Clock;
 use Fuzeo\Queue\Core\QueueManager;
 use Fuzeo\Queue\Drivers\Failure;
+use Fuzeo\Queue\Drivers\FailureStore;
 use Fuzeo\Queue\Drivers\MySql\MySqlDriver;
 use Fuzeo\Queue\Drivers\QueueDriver;
 use Fuzeo\Queue\Drivers\Reservation;
 use Fuzeo\Queue\Drivers\ReserveRequest;
 use Fuzeo\Queue\Exceptions\AmbiguousAckException;
 use Fuzeo\Queue\Exceptions\DriverException;
-use Fuzeo\Queue\Exceptions\JobTimeoutException;
-use Fuzeo\Queue\Exceptions\SiteUnavailableException;
-use Fuzeo\Queue\Exceptions\UnknownJobException;
-use Fuzeo\Queue\Exceptions\UnsupportedEnvelopeException;
 use Fuzeo\Queue\Jobs\Envelope;
 use Fuzeo\Queue\Persistence\Connection;
+use Fuzeo\Queue\Retry\AttemptRecord;
+use Fuzeo\Queue\Retry\FailureClassifier;
+use Fuzeo\Queue\Retry\RandomSource;
+use Fuzeo\Queue\Retry\SystemRandom;
 use Fuzeo\Queue\Runtime\Hooks;
+use Fuzeo\Queue\Support\SecretRedactor;
 use Fuzeo\Queue\Support\SystemClock;
+use Fuzeo\Queue\Support\TraceSanitizer;
 
 final class WorkerLoop
 {
@@ -43,6 +46,9 @@ final class WorkerLoop
         private readonly SignalListener $signals = new SignalListener(),
         private readonly TimeoutGuard $timeouts = new TimeoutGuard(),
         private readonly ?Connection $connection = null,
+        private readonly FailureClassifier $classifier = new FailureClassifier(),
+        private readonly RandomSource $random = new SystemRandom(),
+        private readonly SecretRedactor $redactor = new SecretRedactor(),
     ) {
         $this->startedAt = $this->clock->now();
     }
@@ -138,15 +144,12 @@ final class WorkerLoop
             $this->timeouts->disarm();
             $this->ack($reservation);
             Hooks::emit(Hooks::AFTER_JOB, $envelope, $this->identity);
-        } catch (JobTimeoutException | SiteUnavailableException | UnknownJobException | UnsupportedEnvelopeException $exception) {
-            $this->timeouts->disarm();
-            $this->fail($reservation, $exception);
         } catch (AmbiguousAckException $exception) {
             $this->timeouts->disarm();
             throw $exception;
         } catch (\Throwable $exception) {
             $this->timeouts->disarm();
-            $this->fail($reservation, $exception);
+            $this->handleFailure($reservation, $exception);
         }
     }
 
@@ -160,11 +163,42 @@ final class WorkerLoop
         $this->driver->acknowledge($reservation);
     }
 
-    private function fail(Reservation $reservation, \Throwable $exception): void
+    private function handleFailure(Reservation $reservation, \Throwable $exception): void
     {
         Hooks::emit(Hooks::JOB_FAILED, $reservation->envelope, $exception, $this->identity);
+        $decision = $this->classifier->decide(
+            $exception,
+            $reservation->envelope,
+            $reservation->envelope->retryPolicy(),
+            $this->clock,
+            $this->random,
+        );
+        $record = AttemptRecord::fromFailure(
+            $reservation->envelope,
+            $exception,
+            $decision,
+            $this->redactor->redactMessage($exception->getMessage()),
+            TraceSanitizer::sanitize($exception),
+            $this->clock->now(),
+            $reservation->workerId,
+            $reservation->token->value,
+        );
+
+        if ($this->driver instanceof FailureStore) {
+            try {
+                $this->driver->settleOutcome($reservation, $record, $decision->nextState, $decision->availableAt);
+            } catch (DriverException) {
+                // Lease recovery remains the source of truth if settlement cannot persist.
+            }
+
+            return;
+        }
+
         try {
-            $this->driver->fail($reservation, new Failure($exception->getMessage(), $exception::class, $exception->getTraceAsString()));
+            $this->driver->fail(
+                $reservation,
+                new Failure($record->sanitizedMessage, $exception::class, $record->sanitizedTrace)
+            );
         } catch (DriverException) {
             // Lease recovery remains the source of truth if fail cannot persist.
         }
@@ -240,7 +274,7 @@ final class WorkerLoop
             if (!in_array($error['type'], $fatals, true)) {
                 return;
             }
-            // Do not ACK. Lease expiry recovers the job.
+            // Do not ACK. Lease expiry recovers the job and consumes the reserved attempt.
         });
     }
 }

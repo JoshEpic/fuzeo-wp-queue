@@ -25,6 +25,7 @@ use Fuzeo\Queue\Persistence\MemoryMigrationLock;
 use Fuzeo\Queue\Persistence\MemoryMigrationRepository;
 use Fuzeo\Queue\Persistence\MysqlAdvisoryLock;
 use Fuzeo\Queue\Persistence\MigrationRunner;
+use Fuzeo\Queue\Persistence\AttemptsMigration;
 use Fuzeo\Queue\Persistence\QueueTablesMigration;
 use Fuzeo\Queue\Persistence\WpdbConnection;
 use Fuzeo\Queue\Serialization\JsonPayloadSerializer;
@@ -364,6 +365,7 @@ final class Coordinator
         $migrations = [new BaselineMigration(self::$connection)];
         if (self::$connection !== null) {
             $migrations[] = new QueueTablesMigration(self::$connection);
+            $migrations[] = new AttemptsMigration(self::$connection);
         }
         $result = $manager->migrations()->run($migrations);
         $current = (int) (self::kernel()['migrations_run'] ?? 0);

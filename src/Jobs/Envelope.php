@@ -6,6 +6,7 @@ namespace Fuzeo\Queue\Jobs;
 
 use Fuzeo\Queue\Exceptions\QueueException;
 use Fuzeo\Queue\Exceptions\UnsupportedEnvelopeException;
+use Fuzeo\Queue\Retry\RetryPolicy;
 use Fuzeo\Queue\Support\Dates;
 use Fuzeo\Queue\Support\Ulid;
 
@@ -89,7 +90,36 @@ final class Envelope
 
     public function withAttempt(int $attempt): self
     {
+        if ($attempt < $this->attempt) {
+            throw new QueueException('Job attempt count cannot decrease.');
+        }
+
         return $this->cloneWith(['attempt' => $attempt]);
+    }
+
+    public function resetAttempts(): self
+    {
+        return $this->cloneWith(['attempt' => 0]);
+    }
+
+    /**
+     * @param array<string, mixed> $metadata
+     */
+    public function withMetadata(array $metadata): self
+    {
+        return $this->cloneWith(['metadata' => $metadata]);
+    }
+
+    public function retryPolicy(): RetryPolicy
+    {
+        $data = $this->metadata['_retry'] ?? [];
+        if (!is_array($data)) {
+            $data = [];
+        }
+        /** @var array<string, mixed> $data */
+        $data['max_attempts'] = $this->maxAttempts;
+
+        return RetryPolicy::fromArray($data, $this->maxAttempts);
     }
 
     public function withAvailableAt(\DateTimeImmutable $availableAt): self
@@ -246,7 +276,7 @@ final class Envelope
             parentJobId: $this->parentJobId,
             idempotencyKey: $this->idempotencyKey,
             uniqueKey: $this->uniqueKey,
-            metadata: $this->metadata,
+            metadata: $overrides['metadata'] ?? $this->metadata,
             tags: $this->tags,
             createdAt: $this->createdAt,
             state: $overrides['state'] ?? $this->state,

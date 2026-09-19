@@ -19,7 +19,7 @@ final class JobExecutor
     {
         $registered = $this->registry->get($envelope->jobType);
         if ($envelope->schemaVersion !== $registered->schemaVersion) {
-            throw new \Fuzeo\Queue\Exceptions\QueueException(
+            throw new \Fuzeo\Queue\Exceptions\UnsupportedSchemaException(
                 'Job ' . $envelope->jobType . ' schema version ' . $envelope->schemaVersion
                 . ' does not match registered version ' . $registered->schemaVersion . '.'
             );

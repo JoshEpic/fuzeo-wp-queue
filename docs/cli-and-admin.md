@@ -14,7 +14,9 @@ Reasons:
 WP_CLI::add_command('fuzeo-queue', QueueCommand::class);
 ```
 
-Subcommands: `work`, `status`, `workers`, `queues`.
+Subcommands: `work`, `status`, `workers`, `queues`, `failed`, `prune`.
+
+`failed` lists dead/failed jobs without payloads. `failed show <id>` prints sanitized metadata and traces. `failed show <id> --payload` includes a redacted payload. `failed retry <id>` revives a dead job (same id, new attempt cycle). See [retries](retries.md).
 
 ## Admin UI
 

@@ -26,6 +26,9 @@ final class Config
         public readonly int $workerMaxRuntimeSeconds = 0,
         public readonly int $heartbeatIntervalSeconds = 10,
         public readonly int $staleWorkerSeconds = 30,
+        public readonly int $completedRetentionDays = 7,
+        public readonly int $deadRetentionDays = 30,
+        public readonly int $defaultJitterPercent = 0,
     ) {
     }
 
@@ -50,6 +53,9 @@ final class Config
             workerMaxRuntimeSeconds: $this->int($values, 'worker_max_runtime', $this->workerMaxRuntimeSeconds),
             heartbeatIntervalSeconds: $this->int($values, 'heartbeat_interval', $this->heartbeatIntervalSeconds),
             staleWorkerSeconds: $this->int($values, 'stale_worker_threshold', $this->staleWorkerSeconds),
+            completedRetentionDays: $this->int($values, 'completed_retention_days', $this->completedRetentionDays),
+            deadRetentionDays: $this->int($values, 'dead_retention_days', $this->deadRetentionDays),
+            defaultJitterPercent: $this->int($values, 'default_jitter_percent', $this->defaultJitterPercent),
         );
     }
 

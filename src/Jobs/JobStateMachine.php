@@ -7,15 +7,17 @@ namespace Fuzeo\Queue\Jobs;
 use Fuzeo\Queue\Exceptions\InvalidStateTransitionException;
 
 /**
- * Canonical persisted states. "Running" is derived from an active reservation
- * (state = reserved and lease not expired), not stored separately.
+ * Canonical persisted states. "Running" is derived from an active reservation.
  *
- * Valid transitions:
- *   pending   -> reserved | cancelled
- *   reserved  -> pending (release) | completed (ack) | failed | cancelled
- *   completed -> (terminal)
- *   failed    -> (terminal in Phase 1; later phases may requeue)
- *   cancelled -> (terminal)
+ * pending   -> reserved | cancelled
+ * reserved  -> pending (retry/release) | completed | dead | failed | cancelled
+ * dead      -> pending (manual retry)
+ * failed    -> pending (manual retry of legacy terminal rows)
+ * completed -> (terminal)
+ * cancelled -> (terminal)
+ *
+ * `failed` remains for Phase 2 driver.fail() compatibility. New terminal
+ * outcomes use `dead`. Neither is auto-reserved.
  */
 final class JobStateMachine
 {
@@ -23,10 +25,17 @@ final class JobStateMachine
      * @var array<string, list<JobState>>
      */
     private const TRANSITIONS = [
-        'pending' => [JobState::Reserved, JobState::Cancelled],
-        'reserved' => [JobState::Pending, JobState::Completed, JobState::Failed, JobState::Cancelled],
+        'pending' => [JobState::Reserved, JobState::Cancelled, JobState::Dead],
+        'reserved' => [
+            JobState::Pending,
+            JobState::Completed,
+            JobState::Failed,
+            JobState::Dead,
+            JobState::Cancelled,
+        ],
         'completed' => [],
-        'failed' => [],
+        'failed' => [JobState::Pending],
+        'dead' => [JobState::Pending],
         'cancelled' => [],
     ];
 
@@ -67,5 +76,10 @@ final class JobStateMachine
         }
 
         return $allowed;
+    }
+
+    public static function isTerminalStopped(JobState $state): bool
+    {
+        return $state === JobState::Dead || $state === JobState::Failed;
     }
 }

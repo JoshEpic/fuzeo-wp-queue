@@ -6,6 +6,8 @@ namespace Fuzeo\Queue\Jobs;
 
 use Fuzeo\Queue\Contracts\Clock;
 use Fuzeo\Queue\Contracts\ExecutionContextResolver;
+use Fuzeo\Queue\Retry\Retryable;
+use Fuzeo\Queue\Retry\RetryPolicy;
 use Fuzeo\Queue\Serialization\PayloadSerializer;
 use Fuzeo\Queue\Support\Dates;
 use Fuzeo\Queue\Support\SystemClock;
@@ -41,6 +43,16 @@ final class EnvelopeFactory
         $availableAt = $options->availableAt !== null ? Dates::utc($options->availableAt) : $now;
         $context = $options->context ?? $this->contextResolver->current();
         $origin = $options->origin ?? $registered->origin;
+        $policy = $options->retryPolicy;
+        if ($policy === null && $job instanceof Retryable) {
+            $policy = $job->retryPolicy();
+        }
+        $policy ??= new RetryPolicy($options->maxAttempts ?? $this->defaultMaxAttempts);
+        $maxAttempts = $options->maxAttempts ?? $policy->maxAttempts;
+        $metadata = $this->serializer->normalize($options->metadata);
+        $retryMeta = $policy->toArray();
+        $retryMeta['max_attempts'] = $maxAttempts;
+        $metadata['_retry'] = $retryMeta;
 
         return new Envelope(
             jobId: Ulid::generate(self::timestampMs($now)),
@@ -51,7 +63,7 @@ final class EnvelopeFactory
             queue: QueueName::normalize($options->queue ?? QueueName::DEFAULT),
             priority: $options->priority,
             attempt: 0,
-            maxAttempts: $options->maxAttempts ?? $this->defaultMaxAttempts,
+            maxAttempts: $maxAttempts,
             timeoutSeconds: $options->timeoutSeconds ?? $this->defaultTimeoutSeconds,
             availableAt: $availableAt,
             context: $context,
@@ -62,7 +74,7 @@ final class EnvelopeFactory
             parentJobId: $options->parentJobId,
             idempotencyKey: $options->idempotencyKey,
             uniqueKey: $options->uniqueKey,
-            metadata: $this->serializer->normalize($options->metadata),
+            metadata: $metadata,
             tags: $options->tags,
             createdAt: $now,
             state: JobState::Pending,

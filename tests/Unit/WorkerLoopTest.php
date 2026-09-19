@@ -66,7 +66,7 @@ final class WorkerLoopTest extends TestCase
         self::assertSame(0, ProcessOrderHandler::$handled);
         $driver = $runtime->driver();
         self::assertInstanceOf(MemoryDriver::class, $driver);
-        self::assertSame(JobState::Failed, $driver->all()[0]->state);
+        self::assertSame(JobState::Dead, $driver->all()[0]->state);
     }
 
     public function testUnknownHandlerFailsDeterministically(): void
@@ -86,6 +86,6 @@ final class WorkerLoopTest extends TestCase
         $worker->run();
         $driver = $runtime->driver();
         self::assertInstanceOf(MemoryDriver::class, $driver);
-        self::assertSame(JobState::Failed, $driver->all()[0]->state);
+        self::assertSame(JobState::Dead, $driver->all()[0]->state);
     }
 }

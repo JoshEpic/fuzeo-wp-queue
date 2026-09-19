@@ -26,6 +26,7 @@ final class DispatchOptions
         public readonly array $tags = [],
         public readonly ?int $maxAttempts = null,
         public readonly ?int $timeoutSeconds = null,
+        public readonly ?\Fuzeo\Queue\Retry\RetryPolicy $retryPolicy = null,
     ) {
     }
 
@@ -85,6 +86,16 @@ final class DispatchOptions
         return $this->cloneWith(['metadata' => $metadata]);
     }
 
+    public function withMaxAttempts(int $maxAttempts): self
+    {
+        return $this->cloneWith(['maxAttempts' => $maxAttempts]);
+    }
+
+    public function withRetryPolicy(\Fuzeo\Queue\Retry\RetryPolicy $policy): self
+    {
+        return $this->cloneWith(['retryPolicy' => $policy]);
+    }
+
     /**
      * @param array<string, mixed> $overrides
      */
@@ -104,8 +115,9 @@ final class DispatchOptions
             uniqueKey: $overrides['uniqueKey'] ?? $this->uniqueKey,
             metadata: $overrides['metadata'] ?? $this->metadata,
             tags: $overrides['tags'] ?? $this->tags,
-            maxAttempts: $this->maxAttempts,
-            timeoutSeconds: $this->timeoutSeconds,
+            maxAttempts: $overrides['maxAttempts'] ?? $this->maxAttempts,
+            timeoutSeconds: $overrides['timeoutSeconds'] ?? $this->timeoutSeconds,
+            retryPolicy: $overrides['retryPolicy'] ?? $this->retryPolicy,
         );
     }
 }

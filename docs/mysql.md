@@ -18,11 +18,13 @@ You can set it explicitly:
 define('FUZEO_QUEUE_DRIVER', 'mysql');
 ```
 
-Schema version 2 creates network-shared tables:
+Schema version 3 adds `{prefix}fuzeo_queue_attempts`. Version 2 created:
 
 - `{prefix}fuzeo_queue_jobs`
 - `{prefix}fuzeo_queue_workers`
 - `{prefix}fuzeo_queue_meta`
+
+Restart `wp fuzeo-queue work` after upgrading so old workers are not left mutating v3 rows with v0.2 `fail()` semantics.
 
 `{prefix}` is `$wpdb->base_prefix` so every site in a network shares one queue.
 

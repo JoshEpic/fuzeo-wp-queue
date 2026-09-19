@@ -33,6 +33,10 @@ final class JobStateMachineTest extends TestCase
             [JobState::Reserved, JobState::Failed],
             [JobState::Reserved, JobState::Cancelled],
             [JobState::Reserved, JobState::Reserved],
+            [JobState::Pending, JobState::Dead],
+            [JobState::Reserved, JobState::Dead],
+            [JobState::Dead, JobState::Pending],
+            [JobState::Failed, JobState::Pending],
         ];
     }
 
@@ -55,9 +59,9 @@ final class JobStateMachineTest extends TestCase
             [JobState::Pending, JobState::Completed],
             [JobState::Pending, JobState::Failed],
             [JobState::Completed, JobState::Pending],
-            [JobState::Failed, JobState::Pending],
             [JobState::Cancelled, JobState::Pending],
             [JobState::Completed, JobState::Reserved],
+            [JobState::Dead, JobState::Reserved],
         ];
     }
 }

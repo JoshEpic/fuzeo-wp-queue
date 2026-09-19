@@ -29,9 +29,11 @@ final class FakeQueueTest extends TestCase
     {
         Queue::on('fulfillment')
             ->onSite(2, 42)
+            ->withMaxAttempts(5)
             ->dispatch(new ProcessOrderJob(99));
 
         Queue::assertDispatched(ProcessOrderJob::class);
+        Queue::fake()->assertMaxAttempts(ProcessOrderJob::class, 5);
         Queue::assertDispatchedTimes('acme.process_order', 1);
         $fake = Queue::fake();
         $fake->assertDispatchedOn('fulfillment', ProcessOrderJob::class);

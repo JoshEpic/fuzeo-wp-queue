@@ -40,7 +40,9 @@ $runtime->jobs()->registerJob(
 
 Duplicate types are allowed only when handler class, schema version, and job class match. Any other conflict throws `DuplicateJobTypeException`. Unknown types throw `UnknownJobException`.
 
-Handlers implement `Handler::handle(Envelope $envelope)` and must be constructible with no required arguments. Unknown types and missing plugins fail the reserved job; they are not deserialized from PHP class names.
+Handlers implement `Handler::handle(Envelope $envelope)` and must be constructible with no required arguments. Unknown types and unsupported payload schema versions dead-letter. After the origin plugin is restored, `wp fuzeo-queue failed retry <id>` can run the same job identity again.
+
+See [retries](retries.md) for policies, backoff, and at-least-once caveats.
 
 ## Dispatch
 

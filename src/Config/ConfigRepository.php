@@ -93,6 +93,9 @@ final class ConfigRepository
             'FUZEO_QUEUE_WORKER_MAX_RUNTIME' => 'worker_max_runtime',
             'FUZEO_QUEUE_HEARTBEAT_INTERVAL' => 'heartbeat_interval',
             'FUZEO_QUEUE_STALE_WORKER_THRESHOLD' => 'stale_worker_threshold',
+            'FUZEO_QUEUE_COMPLETED_RETENTION_DAYS' => 'completed_retention_days',
+            'FUZEO_QUEUE_DEAD_RETENTION_DAYS' => 'dead_retention_days',
+            'FUZEO_QUEUE_DEFAULT_JITTER_PERCENT' => 'default_jitter_percent',
         ];
 
         $values = [];
