@@ -110,14 +110,24 @@ final class MySqlDriverTest extends MysqlTestCase
         Queue::dispatch(new ProcessOrderJob(2));
 
         $jobs = Schema::quoteTable($this->connection->prefix(), Schema::JOBS);
-        $this->connection->begin();
-        $locked = $this->connection->selectOne(
-            'SELECT * FROM ' . $jobs . '
+        $chosen = $this->connection->selectOne(
+            'SELECT `job_id` FROM ' . $jobs . '
              WHERE `queue` = ? AND `state` = ?
              ORDER BY `priority` DESC, `available_at` ASC, `job_id` ASC
-             LIMIT 1
-             FOR UPDATE SKIP LOCKED',
+             LIMIT 1',
             ['default', JobState::Pending->value]
+        );
+        self::assertNotNull($chosen);
+        self::assertIsString($chosen['job_id'] ?? null);
+
+        $this->connection->begin();
+        $isolation = $this->connection->selectOne('SELECT @@transaction_isolation AS iso');
+        $iso = strtoupper(str_replace([' ', '_'], '-', (string) ($isolation['iso'] ?? '')));
+        self::assertSame('READ-COMMITTED', $iso);
+
+        $locked = $this->connection->selectOne(
+            'SELECT * FROM ' . $jobs . ' WHERE `job_id` = ? FOR UPDATE',
+            [$chosen['job_id']]
         );
         self::assertNotNull($locked);
         self::assertIsString($locked['job_id'] ?? null);

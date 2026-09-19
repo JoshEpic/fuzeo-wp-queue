@@ -6,11 +6,13 @@ Two workers must not share an active reservation. Ancient MySQL lacks `SKIP LOCK
 
 ## Decision
 
-Require MySQL 8.0.1+ or MariaDB 10.6+. Reserve inside a transaction whose isolation level is **READ COMMITTED**:
+Require MySQL 8.0.1+ or MariaDB 10.6+. Connections use **session** isolation `READ COMMITTED` (`SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED`). Next-transaction `SET TRANSACTION` is not enough: PDO `beginTransaction()` can start the transaction without applying it, so REPEATABLE READ gap locks remain.
 
-`SET TRANSACTION ISOLATION LEVEL READ COMMITTED` then `SELECT ... FOR UPDATE SKIP LOCKED` then `UPDATE` token, lease, worker, state=reserved.
+Reservation is two-step: a non-locking ordered candidate read, then `SELECT ... WHERE job_id = ? FOR UPDATE SKIP LOCKED` on the primary key. `ORDER BY priority DESC, available_at ASC` cannot use `reserve_pending` (mixed sort direction), so a single locking `LIMIT 1` filesort examines every matching row and SKIP LOCKED returns nothing to the second worker.
 
-Default REPEATABLE READ next-key/gap locks can cover every pending row for the queue even with `LIMIT 1`. A second worker then sees no unlocked candidate, returns null, and (with `--sleep=0`) exits while jobs remain. READ COMMITTED locks only the chosen row, which is what SKIP LOCKED needs for concurrent workers.
+Then `UPDATE` token, lease, worker, state=reserved.
+
+Default REPEATABLE READ next-key/gap locks can cover every pending row for the queue even with `LIMIT 1`. A second worker then sees no unlocked candidate, returns null, and (with `--sleep=0`) exits while jobs remain. READ COMMITTED plus a primary-key lock skips only the held row.
 
 Expired reserved rows are eligible in the same SELECT (`lease_expires_at <= now`). No separate sweeper is required.
 

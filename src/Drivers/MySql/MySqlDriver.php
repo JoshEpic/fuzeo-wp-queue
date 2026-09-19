@@ -204,24 +204,7 @@ final class MySqlDriver implements QueueDriver, FailureStore, ReliableAcknowledg
 
         $this->connection->begin();
         try {
-            $row = $this->connection->selectOne(
-                'SELECT * FROM ' . $this->jobs() . '
-                 WHERE `queue` = ?
-                   AND (
-                        (`state` = ? AND `available_at` <= ?)
-                     OR (`state` = ? AND `lease_expires_at` IS NOT NULL AND `lease_expires_at` <= ?)
-                   )
-                 ORDER BY `priority` DESC, `available_at` ASC, `job_id` ASC
-                 LIMIT 1
-                 FOR UPDATE SKIP LOCKED',
-                [
-                    $request->queue,
-                    JobState::Pending->value,
-                    $this->date($now),
-                    JobState::Reserved->value,
-                    $this->date($now),
-                ]
-            );
+            $row = $this->lockNextReservableRow($request->queue, $now);
 
             if ($row === null) {
                 $this->connection->commit();
@@ -880,6 +863,76 @@ final class MySqlDriver implements QueueDriver, FailureStore, ReliableAcknowledg
     public function requireCurrentSchema(): void
     {
         $this->assertSchemaCompatible();
+    }
+
+    /**
+     * Candidate rows are chosen with a non-locking read. The lock is taken on
+     * the primary key only so mixed ASC/DESC ORDER BY cannot filesort-lock the
+     * rest of the queue (SKIP LOCKED would then return nothing).
+     *
+     * @return array<string, mixed>|null
+     */
+    private function lockNextReservableRow(string $queue, \DateTimeImmutable $now): ?array
+    {
+        $nowDate = $this->date($now);
+        $candidates = $this->connection->select(
+            'SELECT `job_id` FROM ' . $this->jobs() . '
+             WHERE `queue` = ?
+               AND (
+                    (`state` = ? AND `available_at` <= ?)
+                 OR (`state` = ? AND `lease_expires_at` IS NOT NULL AND `lease_expires_at` <= ?)
+               )
+             ORDER BY `priority` DESC, `available_at` ASC, `job_id` ASC
+             LIMIT 32',
+            [
+                $queue,
+                JobState::Pending->value,
+                $nowDate,
+                JobState::Reserved->value,
+                $nowDate,
+            ]
+        );
+
+        foreach ($candidates as $candidate) {
+            $jobId = (string) ($candidate['job_id'] ?? '');
+            if ($jobId === '') {
+                continue;
+            }
+            $this->connection->execute('SAVEPOINT fuzeo_reserve');
+            $row = $this->connection->selectOne(
+                'SELECT * FROM ' . $this->jobs() . ' WHERE `job_id` = ? FOR UPDATE SKIP LOCKED',
+                [$jobId]
+            );
+            if ($row === null || !$this->rowIsReservable($row, $queue, $nowDate)) {
+                $this->connection->execute('ROLLBACK TO SAVEPOINT fuzeo_reserve');
+                continue;
+            }
+
+            return $row;
+        }
+
+        return null;
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     */
+    private function rowIsReservable(array $row, string $queue, string $nowDate): bool
+    {
+        if ((string) ($row['queue'] ?? '') !== $queue) {
+            return false;
+        }
+        $state = (string) ($row['state'] ?? '');
+        if ($state === JobState::Pending->value) {
+            return (string) ($row['available_at'] ?? '') <= $nowDate;
+        }
+        if ($state === JobState::Reserved->value) {
+            $lease = $row['lease_expires_at'] ?? null;
+
+            return is_string($lease) && $lease !== '' && $lease <= $nowDate;
+        }
+
+        return false;
     }
 
     private function assertSchemaCompatible(): void

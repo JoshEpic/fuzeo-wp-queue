@@ -25,6 +25,7 @@ final class PdoConnection implements Connection
         }
         $this->pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
         $this->supportsSkipLocked = self::detectSkipLockedFromVersion($this->versionString());
+        $this->applyReadCommittedIsolation();
     }
 
     public static function fromDsn(string $dsn, string $username, string $password, string $prefix = 'wp_'): self
@@ -68,7 +69,7 @@ final class PdoConnection implements Connection
     public function begin(): void
     {
         if (!$this->pdo->inTransaction()) {
-            $this->pdo->exec('SET TRANSACTION ISOLATION LEVEL READ COMMITTED');
+            $this->applyReadCommittedIsolation();
             $this->pdo->beginTransaction();
         }
     }
@@ -113,6 +114,7 @@ final class PdoConnection implements Connection
             PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
         ]);
         $this->supportsSkipLocked = self::detectSkipLockedFromVersion($this->versionString());
+        $this->applyReadCommittedIsolation();
     }
 
     public function supportsSkipLocked(): bool
@@ -186,5 +188,16 @@ final class PdoConnection implements Connection
         $version = $statement->fetchColumn();
 
         return is_string($version) ? $version : '';
+    }
+
+    /**
+     * Session isolation, not SET TRANSACTION for the next statement.
+     * PDO::beginTransaction() can emit START TRANSACTION in a way that
+     * swallows next-transaction isolation, leaving REPEATABLE READ gap locks
+     * on every pending row for a queue.
+     */
+    private function applyReadCommittedIsolation(): void
+    {
+        $this->pdo->exec('SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED');
     }
 }

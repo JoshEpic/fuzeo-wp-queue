@@ -43,14 +43,17 @@ Queue **identifiers**, not 50 MB import files.
 ## Reservation
 
 ```sql
-SELECT ... WHERE queue = ? AND (
+SELECT job_id FROM ... WHERE queue = ? AND (
   (state = 'pending' AND available_at <= ?)
   OR (state = 'reserved' AND lease_expires_at <= ?)
 )
 ORDER BY priority DESC, available_at ASC, job_id ASC
-LIMIT 1
-FOR UPDATE SKIP LOCKED
+LIMIT 32;
+
+SELECT * FROM ... WHERE job_id = ? FOR UPDATE SKIP LOCKED
 ```
+
+The lock is taken on the primary key. A single `ORDER BY … LIMIT 1 FOR UPDATE` can filesort-lock every matching row, so a second worker using `SKIP LOCKED` would see an empty queue.
 
 Priority: higher first, then oldest `available_at`, then `job_id`.
 
