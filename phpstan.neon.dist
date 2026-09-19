@@ -8,3 +8,6 @@ parameters:
     bootstrapFiles:
         - tests/Support/WordPressStubs.php
         - tests/Support/WpdbStub.php
+        - tests/Support/RedisStubs.php
+    excludePaths:
+        - tests/Support/RedisStubs.php

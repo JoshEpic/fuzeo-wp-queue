@@ -8,12 +8,12 @@ composer require fuzeowp/queue
 
 Fuzeo Queue is a Composer library, not a WordPress plugin and not a wrapper around WP-Cron or Action Scheduler. It owns its queue architecture.
 
-Phase 3 adds retries, dead letters, `wp fuzeo-queue failed`, and `wp fuzeo-queue prune`. Delivery remains **at-least-once**.
+Phase 4 adds a Redis production driver, driver conformance tests, and fleet concurrency/rate limits. Delivery remains **at-least-once**.
 
 ## Requirements
 
 - PHP 8.1+
-- MySQL 8.0.1+ or MariaDB 10.6+ for production
+- MySQL 8.0.1+ or MariaDB 10.6+ **or** Redis 6.0+ with PhpRedis for production
 - WordPress is optional at the package boundary. Requiring the package loads classes; it does not mutate WordPress until a runtime boots on `plugins_loaded`.
 
 ## Quick start
@@ -74,6 +74,7 @@ Fuzeo Queue is **at-least-once**. A worker may crash after a side effect and bef
 - [Jobs and payloads](docs/jobs.md)
 - [Retries and dead letters](docs/retries.md)
 - [MySQL driver](docs/mysql.md)
+- [Redis driver](docs/redis.md)
 - [Workers](docs/workers.md)
 - [Troubleshooting](docs/troubleshooting.md)
 - [Testing](docs/testing.md)

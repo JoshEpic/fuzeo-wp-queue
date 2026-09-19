@@ -42,3 +42,13 @@ export FUZEO_QUEUE_TEST_DB_NAME=fuzeo_queue_test
 vendor/bin/phpunit
 ```
 
+Redis integration tests:
+
+```bash
+docker compose up -d redis
+export FUZEO_QUEUE_TEST_REDIS_HOST=127.0.0.1
+export FUZEO_QUEUE_TEST_REDIS_PORT=6379
+export FUZEO_QUEUE_TEST_REDIS_DB=15
+vendor/bin/phpunit --testsuite Redis,Conformance
+```
+

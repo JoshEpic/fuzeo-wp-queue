@@ -96,6 +96,10 @@ final class ConfigRepository
             'FUZEO_QUEUE_COMPLETED_RETENTION_DAYS' => 'completed_retention_days',
             'FUZEO_QUEUE_DEAD_RETENTION_DAYS' => 'dead_retention_days',
             'FUZEO_QUEUE_DEFAULT_JITTER_PERCENT' => 'default_jitter_percent',
+            'FUZEO_QUEUE_REDIS_DSN' => 'redis_dsn',
+            'FUZEO_QUEUE_REDIS_NAMESPACE' => 'redis_namespace',
+            'FUZEO_QUEUE_CONCURRENCY' => 'concurrency',
+            'FUZEO_QUEUE_RATE_LIMITS' => 'rate_limits',
         ];
 
         $values = [];

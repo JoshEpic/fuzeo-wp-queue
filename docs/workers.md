@@ -9,7 +9,9 @@ wp fuzeo-queue work --queue=high,default --sleep=1 --timeout=60 --lease=90 --mem
 
 | Option | Meaning |
 | --- | --- |
-| `--queue` | Comma-separated names. Left-to-right preference. |
+`--queue` left-to-right preference is the same for MySQL and Redis. Redis workers `BLPOP` only on the **last** listed queue after polling the others.
+
+Worker registry is stored in the active backend (MySQL tables or Redis hashes), not a separate control plane.
 | `--sleep` | Idle poll delay when empty. |
 | `--timeout` | Soft job timeout (`pcntl_alarm` when available). |
 | `--lease` | Reservation visibility timeout. Should exceed `--timeout`. |

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Fuzeo\Queue\Drivers\Memory;
 
+use Fuzeo\Queue\Concurrency\AdmissionPolicy;
+use Fuzeo\Queue\Concurrency\TokenBucket;
 use Fuzeo\Queue\Contracts\Clock;
 use Fuzeo\Queue\Drivers\DriverCapabilities;
 use Fuzeo\Queue\Drivers\DriverHealth;
@@ -11,6 +13,7 @@ use Fuzeo\Queue\Drivers\EnqueuedJob;
 use Fuzeo\Queue\Drivers\Failure;
 use Fuzeo\Queue\Drivers\FailureStore;
 use Fuzeo\Queue\Drivers\QueueDriver;
+use Fuzeo\Queue\Drivers\StatusAware;
 use Fuzeo\Queue\Drivers\ReleaseOptions;
 use Fuzeo\Queue\Drivers\Reservation;
 use Fuzeo\Queue\Drivers\ReservationToken;
@@ -28,7 +31,7 @@ use Fuzeo\Queue\Support\SystemClock;
 /**
  * In-process driver for tests and local experiments. Not durable across requests.
  */
-final class MemoryDriver implements QueueDriver, FailureStore
+final class MemoryDriver implements QueueDriver, FailureStore, StatusAware
 {
     /** @var array<string, Envelope> */
     private array $jobs = [];
@@ -39,8 +42,13 @@ final class MemoryDriver implements QueueDriver, FailureStore
     /** @var array<string, list<AttemptRecord>> */
     private array $attempts = [];
 
-    public function __construct(private readonly Clock $clock = new SystemClock())
-    {
+    private readonly TokenBucket $buckets;
+
+    public function __construct(
+        private readonly Clock $clock = new SystemClock(),
+        private readonly AdmissionPolicy $admission = new AdmissionPolicy(),
+    ) {
+        $this->buckets = new TokenBucket();
     }
 
     public function enqueue(Envelope $envelope): EnqueuedJob
@@ -59,7 +67,7 @@ final class MemoryDriver implements QueueDriver, FailureStore
         $now = $this->clock->now();
         $this->recoverExpired($now);
 
-        $selected = null;
+        $candidates = [];
         foreach ($this->jobs as $envelope) {
             if ($envelope->queue !== $request->queue) {
                 continue;
@@ -70,28 +78,42 @@ final class MemoryDriver implements QueueDriver, FailureStore
             if ($envelope->availableAt > $now) {
                 continue;
             }
-            if ($selected === null || $this->isBetter($envelope, $selected)) {
-                $selected = $envelope;
+            $candidates[] = $envelope;
+        }
+        usort($candidates, fn (Envelope $a, Envelope $b): int => $this->isBetter($a, $b) ? -1 : 1);
+
+        foreach ($candidates as $selected) {
+            if ($selected->attempt >= $selected->maxAttempts) {
+                $this->jobs[$selected->jobId] = $selected->withState(JobState::Dead);
+                continue;
             }
+            $limit = $this->admission->concurrencyFor($request->queue);
+            if ($limit !== null && $this->activeOnQueue($request->queue) >= $limit) {
+                continue;
+            }
+            $rate = $this->admission->rateLimitFor($selected);
+            if ($rate !== null) {
+                $wait = $this->buckets->consume($rate, (float) $now->getTimestamp());
+                if ($wait > 0) {
+                    $delay = max(1, (int) ceil($wait));
+                    $this->jobs[$selected->jobId] = $selected->withAvailableAt(
+                        $now->add(new \DateInterval('PT' . $delay . 'S'))
+                    );
+                    continue;
+                }
+            }
+
+            $reserved = $selected->withAttempt($selected->attempt + 1)->withState(JobState::Reserved);
+            $token = ReservationToken::generate();
+            $leaseExpires = $now->add(new \DateInterval('PT' . $request->leaseSeconds . 'S'));
+            $reservation = new Reservation($reserved, $token, $now, $leaseExpires, $request->workerId);
+            $this->jobs[$reserved->jobId] = $reserved;
+            $this->reservations[$reserved->jobId] = $reservation;
+
+            return $reservation;
         }
 
-        if ($selected === null) {
-            return null;
-        }
-
-        if ($selected->attempt >= $selected->maxAttempts) {
-            $this->jobs[$selected->jobId] = $selected->withState(JobState::Dead);
-            return null;
-        }
-
-        $reserved = $selected->withAttempt($selected->attempt + 1)->withState(JobState::Reserved);
-        $token = ReservationToken::generate();
-        $leaseExpires = $now->add(new \DateInterval('PT' . $request->leaseSeconds . 'S'));
-        $reservation = new Reservation($reserved, $token, $now, $leaseExpires, $request->workerId);
-        $this->jobs[$reserved->jobId] = $reserved;
-        $this->reservations[$reserved->jobId] = $reservation;
-
-        return $reservation;
+        return null;
     }
 
     public function acknowledge(Reservation $reservation): void
@@ -278,6 +300,8 @@ final class MemoryDriver implements QueueDriver, FailureStore
             priorities: true,
             delayedJobs: true,
             durable: false,
+            atomicRateLimits: true,
+            queueConcurrency: true,
         );
     }
 
@@ -344,5 +368,17 @@ final class MemoryDriver implements QueueDriver, FailureStore
 
         return $candidate->availableAt < $current->availableAt
             || ($candidate->availableAt == $current->availableAt && $candidate->jobId < $current->jobId);
+    }
+
+    private function activeOnQueue(string $queue): int
+    {
+        $n = 0;
+        foreach ($this->reservations as $reservation) {
+            if ($reservation->envelope->queue === $queue) {
+                $n++;
+            }
+        }
+
+        return $n;
     }
 }

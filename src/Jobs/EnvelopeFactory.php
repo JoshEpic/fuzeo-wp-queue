@@ -6,6 +6,8 @@ namespace Fuzeo\Queue\Jobs;
 
 use Fuzeo\Queue\Contracts\Clock;
 use Fuzeo\Queue\Contracts\ExecutionContextResolver;
+use Fuzeo\Queue\RateLimit\RateLimited;
+use Fuzeo\Queue\RateLimit\RateLimit;
 use Fuzeo\Queue\Retry\Retryable;
 use Fuzeo\Queue\Retry\RetryPolicy;
 use Fuzeo\Queue\Serialization\PayloadSerializer;
@@ -53,6 +55,13 @@ final class EnvelopeFactory
         $retryMeta = $policy->toArray();
         $retryMeta['max_attempts'] = $maxAttempts;
         $metadata['_retry'] = $retryMeta;
+        $rate = $options->rateLimit;
+        if ($rate === null && $job instanceof RateLimited) {
+            $rate = $job->rateLimit();
+        }
+        if ($rate !== null) {
+            $metadata['_rate'] = $rate->toArray();
+        }
 
         return new Envelope(
             jobId: Ulid::generate(self::timestampMs($now)),

@@ -19,4 +19,13 @@ services:
       MYSQL_DATABASE: fuzeo_queue_test
     ports:
       - "3307:3306"
-    profiles: ["mariadb"]
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20

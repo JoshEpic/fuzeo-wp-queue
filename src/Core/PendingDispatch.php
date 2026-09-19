@@ -151,4 +151,12 @@ final class PendingDispatch
 
         return $clone;
     }
+
+    public function withRateLimit(\Fuzeo\Queue\RateLimit\RateLimit $limit): self
+    {
+        $clone = clone $this;
+        $clone->options = $this->options->withRateLimit($limit);
+
+        return $clone;
+    }
 }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Fuzeo\Queue\Drivers\MySql;
 
+use Fuzeo\Queue\Concurrency\AdmissionPolicy;
 use Fuzeo\Queue\Config\Config;
 use Fuzeo\Queue\Contracts\Clock;
 use Fuzeo\Queue\Drivers\DriverCapabilities;
@@ -11,7 +12,11 @@ use Fuzeo\Queue\Drivers\DriverHealth;
 use Fuzeo\Queue\Drivers\EnqueuedJob;
 use Fuzeo\Queue\Drivers\Failure;
 use Fuzeo\Queue\Drivers\FailureStore;
+use Fuzeo\Queue\Drivers\ProvidesWorkerStore;
 use Fuzeo\Queue\Drivers\QueueDriver;
+use Fuzeo\Queue\Drivers\Reconnectable;
+use Fuzeo\Queue\Drivers\ReliableAcknowledger;
+use Fuzeo\Queue\Drivers\StatusAware;
 use Fuzeo\Queue\Drivers\ReleaseOptions;
 use Fuzeo\Queue\Drivers\Reservation;
 use Fuzeo\Queue\Drivers\ReservationToken;
@@ -25,22 +30,36 @@ use Fuzeo\Queue\Persistence\Connection;
 use Fuzeo\Queue\Persistence\DatabaseMigrationRepository;
 use Fuzeo\Queue\Persistence\Schema;
 use Fuzeo\Queue\Persistence\SchemaOwner;
+use Fuzeo\Queue\RateLimit\RateLimit;
 use Fuzeo\Queue\Retry\AttemptRecord;
 use Fuzeo\Queue\Retention\PruneResult;
 use Fuzeo\Queue\Retention\RetentionPolicy;
 use Fuzeo\Queue\Support\Dates;
 use Fuzeo\Queue\Support\SystemClock;
+use Fuzeo\Queue\Worker\WorkerRepository;
+use Fuzeo\Queue\Worker\WorkerStore;
 
 /**
  * Durable InnoDB driver. Reservation uses SELECT ... FOR UPDATE SKIP LOCKED.
  */
-final class MySqlDriver implements QueueDriver, FailureStore
+final class MySqlDriver implements QueueDriver, FailureStore, ReliableAcknowledger, Reconnectable, StatusAware, ProvidesWorkerStore
 {
+    /** @var array<string, string> */
+    private array $concurrencyLocks = [];
+
+    private readonly AdmissionPolicy $admission;
+
     public function __construct(
         private readonly Connection $connection,
         private readonly Clock $clock = new SystemClock(),
         private readonly Config $config = new Config(),
     ) {
+        $this->admission = AdmissionPolicy::fromConfig($config);
+    }
+
+    public function workerStore(): WorkerStore
+    {
+        return new WorkerRepository($this->connection, $this->clock);
     }
 
     public function connection(): Connection
@@ -132,6 +151,29 @@ final class MySqlDriver implements QueueDriver, FailureStore
 
                 return null;
             }
+            $limit = $this->admission->concurrencyFor($request->queue);
+            if ($limit !== null) {
+                $lockName = $this->acquireConcurrencyLock($request->queue, $limit);
+                if ($lockName === null) {
+                    $this->delayLockedPending($envelope, $now->modify('+1 second'));
+                    $this->connection->commit();
+
+                    return null;
+                }
+                $this->concurrencyLocks[$envelope->jobId] = $lockName;
+            }
+            $rate = $this->admission->rateLimitFor($envelope);
+            if ($rate !== null) {
+                $wait = $this->consumeMysqlRate($rate, $now);
+                if ($wait > 0) {
+                    $this->releaseConcurrency($envelope->jobId);
+                    $delay = max(1, (int) ceil($wait));
+                    $this->delayLockedPending($envelope, $now->modify('+' . $delay . ' seconds'));
+                    $this->connection->commit();
+
+                    return null;
+                }
+            }
             $attempt = $envelope->attempt + 1;
             $reserved = $envelope->withAttempt($attempt);
             if ($reserved->state === JobState::Pending) {
@@ -197,6 +239,7 @@ final class MySqlDriver implements QueueDriver, FailureStore
                 'Reservation token is not the active owner of job ' . $reservation->envelope->jobId . '.'
             );
         }
+        $this->releaseConcurrency($reservation->envelope->jobId);
     }
 
     public function release(Reservation $reservation, ReleaseOptions $options): void
@@ -225,6 +268,7 @@ final class MySqlDriver implements QueueDriver, FailureStore
                 'Reservation token is not the active owner of job ' . $reservation->envelope->jobId . '.'
             );
         }
+        $this->releaseConcurrency($reservation->envelope->jobId);
     }
 
     public function fail(Reservation $reservation, Failure $failure): void
@@ -255,6 +299,7 @@ final class MySqlDriver implements QueueDriver, FailureStore
                 'Reservation token is not the active owner of job ' . $reservation->envelope->jobId . '.'
             );
         }
+        $this->releaseConcurrency($reservation->envelope->jobId);
     }
 
     public function settleOutcome(
@@ -322,6 +367,7 @@ final class MySqlDriver implements QueueDriver, FailureStore
 
             $this->insertAttempt($record);
             $this->connection->commit();
+            $this->releaseConcurrency($reservation->envelope->jobId);
         } catch (\Throwable $exception) {
             $this->connection->rollBack();
             throw $exception;
@@ -551,7 +597,20 @@ final class MySqlDriver implements QueueDriver, FailureStore
             priorities: true,
             delayedJobs: true,
             durable: true,
+            atomicRateLimits: true,
+            queueConcurrency: true,
+            highConcurrency: false,
         );
+    }
+
+    public function ping(): bool
+    {
+        return $this->connection->ping();
+    }
+
+    public function reconnect(): void
+    {
+        $this->connection->reconnect();
     }
 
     public function get(string $jobId): Envelope
@@ -830,5 +889,94 @@ final class MySqlDriver implements QueueDriver, FailureStore
             || str_contains($message, 'lost connection')
             || str_contains($message, 'connection lost')
             || str_contains($message, 'server has gone');
+    }
+
+    private function delayLockedPending(Envelope $envelope, \DateTimeImmutable $availableAt): void
+    {
+        $updated = $envelope->state === JobState::Reserved
+            ? $envelope->withState(JobState::Pending)->withAvailableAt($availableAt)
+            : $envelope->withAvailableAt($availableAt);
+        $this->connection->execute(
+            'UPDATE ' . $this->jobs() . '
+             SET `state` = ?, `available_at` = ?, `updated_at` = ?, `envelope` = ?,
+                 `reservation_token` = NULL, `lease_expires_at` = NULL, `reserved_at` = NULL, `worker_id` = NULL
+             WHERE `job_id` = ?',
+            [
+                JobState::Pending->value,
+                $this->date($availableAt),
+                $this->date($availableAt),
+                $this->encodeEnvelope($updated),
+                $envelope->jobId,
+            ]
+        );
+    }
+
+    private function acquireConcurrencyLock(string $queue, int $limit): ?string
+    {
+        for ($slot = 0; $slot < $limit; $slot++) {
+            $name = 'fq:' . substr(sha1($queue, false), 0, 10) . ':' . $slot;
+            $row = $this->connection->selectOne('SELECT GET_LOCK(?, 0) AS `l`', [$name]);
+            if ((int) ($row['l'] ?? 0) === 1) {
+                return $name;
+            }
+        }
+
+        return null;
+    }
+
+    private function releaseConcurrency(string $jobId): void
+    {
+        $name = $this->concurrencyLocks[$jobId] ?? null;
+        if ($name === null) {
+            return;
+        }
+        $this->connection->selectOne('SELECT RELEASE_LOCK(?) AS `l`', [$name]);
+        unset($this->concurrencyLocks[$jobId]);
+    }
+
+    private function consumeMysqlRate(RateLimit $limit, \DateTimeImmutable $now): float
+    {
+        $lock = 'fq:r:' . substr(sha1($limit->key, false), 0, 12);
+        $this->connection->selectOne('SELECT GET_LOCK(?, 2) AS `l`', [$lock]);
+        try {
+            $table = Schema::quoteTable($this->connection->prefix(), Schema::META);
+            $key = 'rate:' . $limit->key;
+            $row = $this->connection->selectOne(
+                'SELECT `meta_value` FROM ' . $table . ' WHERE `meta_key` = ?',
+                [$key]
+            );
+            $nowTs = (float) $now->getTimestamp();
+            $tokens = (float) $limit->capacity;
+            $ts = $nowTs;
+            $raw = $row['meta_value'] ?? null;
+            if (is_string($raw) && str_contains($raw, ':')) {
+                [$storedTokens, $storedTs] = explode(':', $raw, 2);
+                $tokens = (float) $storedTokens;
+                $ts = (float) $storedTs;
+            }
+            $elapsed = max(0.0, $nowTs - $ts);
+            $tokens = min((float) $limit->capacity, $tokens + $elapsed * $limit->refillPerSecond);
+            if ($tokens < 1.0) {
+                $this->upsertMeta($key, $tokens . ':' . $nowTs);
+                $missing = 1.0 - $tokens;
+
+                return $limit->refillPerSecond > 0 ? $missing / $limit->refillPerSecond : 1.0;
+            }
+            $this->upsertMeta($key, ($tokens - 1.0) . ':' . $nowTs);
+
+            return 0.0;
+        } finally {
+            $this->connection->selectOne('SELECT RELEASE_LOCK(?) AS `l`', [$lock]);
+        }
+    }
+
+    private function upsertMeta(string $key, string $value): void
+    {
+        $table = Schema::quoteTable($this->connection->prefix(), Schema::META);
+        $this->connection->execute(
+            'INSERT INTO ' . $table . ' (`meta_key`, `meta_value`) VALUES (?, ?)
+             ON DUPLICATE KEY UPDATE `meta_value` = VALUES(`meta_value`)',
+            [$key, substr($value, 0, 191)]
+        );
     }
 }

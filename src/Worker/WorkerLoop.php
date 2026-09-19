@@ -8,11 +8,14 @@ use Fuzeo\Queue\Contracts\Clock;
 use Fuzeo\Queue\Core\QueueManager;
 use Fuzeo\Queue\Drivers\Failure;
 use Fuzeo\Queue\Drivers\FailureStore;
-use Fuzeo\Queue\Drivers\MySql\MySqlDriver;
+use Fuzeo\Queue\Drivers\ProvidesWorkerStore;
 use Fuzeo\Queue\Drivers\QueueDriver;
+use Fuzeo\Queue\Drivers\Reconnectable;
+use Fuzeo\Queue\Drivers\ReliableAcknowledger;
 use Fuzeo\Queue\Drivers\Reservation;
 use Fuzeo\Queue\Drivers\ReserveRequest;
 use Fuzeo\Queue\Exceptions\AmbiguousAckException;
+use Fuzeo\Queue\Exceptions\ConfigurationException;
 use Fuzeo\Queue\Exceptions\DriverException;
 use Fuzeo\Queue\Jobs\Envelope;
 use Fuzeo\Queue\Persistence\Connection;
@@ -35,13 +38,15 @@ final class WorkerLoop
 
     private int $lastHeartbeatAt = 0;
 
+    private int $reconnectFailures = 0;
+
     public function __construct(
         private readonly QueueDriver $driver,
         private readonly JobExecutor $executor,
         private readonly SiteSwitcher $sites,
         private readonly WorkerOptions $options,
         private readonly WorkerIdentity $identity,
-        private readonly ?WorkerRepository $workers = null,
+        private readonly ?WorkerStore $workers = null,
         private readonly Clock $clock = new SystemClock(),
         private readonly SignalListener $signals = new SignalListener(),
         private readonly TimeoutGuard $timeouts = new TimeoutGuard(),
@@ -56,12 +61,23 @@ final class WorkerLoop
     public static function fromManager(QueueManager $manager, WorkerOptions $options, ?WorkerIdentity $identity = null): self
     {
         $driver = $manager->driver();
-        $connection = $driver instanceof MySqlDriver ? $driver->connection() : null;
         $identity ??= WorkerIdentity::generate($manager->clock()->now());
-        $workers = $connection !== null ? new WorkerRepository($connection, $manager->clock()) : null;
+        $workers = $driver instanceof ProvidesWorkerStore ? $driver->workerStore() : null;
+        $connection = $driver instanceof \Fuzeo\Queue\Drivers\MySql\MySqlDriver ? $driver->connection() : null;
         $sites = function_exists('switch_to_blog')
             ? new WordPressSiteSwitcher()
             : new NullSiteSwitcher();
+        $policy = \Fuzeo\Queue\Concurrency\AdmissionPolicy::fromConfig($manager->config());
+        if ($policy->concurrencyByQueue !== [] && !$driver->capabilities()->supports('queue_concurrency')) {
+            throw new ConfigurationException(
+                'Queue concurrency limits are configured but the active driver does not support queue_concurrency.'
+            );
+        }
+        if ($policy->globalRateLimits !== [] && !$driver->capabilities()->supports('atomic_rate_limits')) {
+            throw new ConfigurationException(
+                'Rate limits are configured but the active driver does not support atomic_rate_limits.'
+            );
+        }
 
         return new self(
             $driver,
@@ -121,9 +137,19 @@ final class WorkerLoop
 
     private function reserveNext(): ?Reservation
     {
-        foreach ($this->options->queues as $queue) {
+        $queues = $this->options->queues;
+        $lastIndex = array_key_last($queues);
+        foreach ($queues as $index => $queue) {
             $lease = max($this->options->leaseSeconds, $this->options->timeoutSeconds + 15);
-            $reserved = $this->driver->reserve(new ReserveRequest($queue, $this->identity->workerId, $lease));
+            $block = 0;
+            if (
+                $index === $lastIndex
+                && $this->driver->capabilities()->supports('blocking_reserve')
+                && $this->options->sleepSeconds > 0
+            ) {
+                $block = $this->options->sleepSeconds;
+            }
+            $reserved = $this->driver->reserve(new ReserveRequest($queue, $this->identity->workerId, $lease, $block));
             if ($reserved !== null) {
                 return $reserved;
             }
@@ -155,7 +181,7 @@ final class WorkerLoop
 
     private function ack(Reservation $reservation): void
     {
-        if ($this->driver instanceof MySqlDriver) {
+        if ($this->driver instanceof ReliableAcknowledger) {
             $this->driver->acknowledgeOrAmbiguous($reservation);
 
             return;
@@ -212,26 +238,47 @@ final class WorkerLoop
         }
         $this->lastHeartbeatAt = $now;
         try {
+            if ($this->driver instanceof Reconnectable && !$this->driver->ping()) {
+                $this->reconnect();
+            }
             if ($this->connection !== null && !$this->connection->ping()) {
                 $this->reconnect();
             }
             $this->workers?->heartbeat($this->identity->workerId, $this->processed, $this->status);
         } catch (DriverException) {
-            $this->reconnect();
+            $this->backoffAfterReconnectFailure();
         }
     }
 
     private function reconnect(): void
     {
         try {
+            if ($this->driver instanceof Reconnectable) {
+                $this->driver->reconnect();
+            }
             $this->connection?->reconnect();
+            $this->reconnectFailures = 0;
         } catch (DriverException) {
+            $this->backoffAfterReconnectFailure();
+        }
+    }
+
+    private function backoffAfterReconnectFailure(): void
+    {
+        $this->reconnectFailures = min(6, $this->reconnectFailures + 1);
+        $base = min(30, 2 ** $this->reconnectFailures);
+        $jitter = $base > 1 ? random_int(0, (int) max(1, (int) ($base * 0.25))) : 0;
+        sleep($base + $jitter);
+        if ($this->reconnectFailures >= 6) {
             $this->stop();
         }
     }
 
     private function idle(): void
     {
+        if ($this->driver->capabilities()->supports('blocking_reserve')) {
+            return;
+        }
         if ($this->options->sleepSeconds > 0) {
             sleep($this->options->sleepSeconds);
         }

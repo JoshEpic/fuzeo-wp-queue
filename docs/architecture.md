@@ -9,7 +9,11 @@ src/
   Config/
   Contracts/
   Core/                  QueueManager, Dispatcher
-  Drivers/               Memory, MySQL, Unavailable
+  Drivers/               Memory, MySQL, Redis, Unavailable
+  Redis/                 PhpRedis client, keys, Lua scripts
+  Concurrency/           queue limits, token bucket
+  RateLimit/             declarative policies
+  Locks/                 distributed lock contract
   Retry/                 policies, backoff, jitter, classifier
   Retention/             prune policy
   Persistence/           migrations, PDO/$wpdb connections, GET_LOCK

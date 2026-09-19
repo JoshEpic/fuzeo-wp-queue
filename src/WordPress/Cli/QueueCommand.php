@@ -6,6 +6,8 @@ namespace Fuzeo\Queue\WordPress\Cli;
 
 use Fuzeo\Queue\Drivers\FailureStore;
 use Fuzeo\Queue\Drivers\MySql\MySqlDriver;
+use Fuzeo\Queue\Drivers\ProvidesWorkerStore;
+use Fuzeo\Queue\Drivers\StatusAware;
 use Fuzeo\Queue\Jobs\EnvelopeRedactor;
 use Fuzeo\Queue\Persistence\SchemaOwner;
 use Fuzeo\Queue\Retention\RetentionPolicy;
@@ -14,7 +16,6 @@ use Fuzeo\Queue\Runtime\PackageInfo;
 use Fuzeo\Queue\Support\SecretRedactor;
 use Fuzeo\Queue\Worker\WorkerLoop;
 use Fuzeo\Queue\Worker\WorkerOptions;
-use Fuzeo\Queue\Worker\WorkerRepository;
 
 final class QueueCommand
 {
@@ -76,16 +77,23 @@ final class QueueCommand
         if ($health->message !== null) {
             $lines['message'] = $health->message;
         }
-        if (method_exists($driver, 'countsByState')) {
-            /** @var array<string, int> $counts */
+        if ($driver instanceof StatusAware) {
             $counts = $driver->countsByState();
             foreach (['pending', 'reserved', 'completed', 'dead', 'failed'] as $state) {
                 $lines[$state] = (string) ($counts[$state] ?? 0);
             }
         }
-        if (method_exists($driver, 'retryingCount')) {
+        if ($driver instanceof StatusAware) {
             $lines['retrying'] = (string) $driver->retryingCount();
         }
+        if (isset($health->details['endpoint']) && is_string($health->details['endpoint'])) {
+            $lines['redis'] = $health->details['endpoint'];
+        }
+        if (isset($health->details['maxmemory_policy']) && is_string($health->details['maxmemory_policy'])) {
+            $lines['redis_policy'] = $health->details['maxmemory_policy'];
+        }
+        $previous = $runtime->config()->driver;
+        $lines['backend'] = $previous;
         $this->printLines($lines);
     }
 
@@ -98,11 +106,11 @@ final class QueueCommand
         unset($args, $assoc);
         $runtime = Coordinator::get();
         $driver = $runtime->driver();
-        if (!$driver instanceof MySqlDriver) {
-            $this->error('Worker registry requires the mysql driver.');
+        if (!$driver instanceof ProvidesWorkerStore) {
+            $this->error('Worker registry is not available for this driver.');
             return;
         }
-        $repo = new WorkerRepository($driver->connection(), $runtime->clock());
+        $repo = $driver->workerStore();
         $threshold = $runtime->config()->staleWorkerSeconds;
         foreach ($repo->all() as $row) {
             $stale = $repo->isStale($row, $threshold) ? 'stale' : (string) ($row['status'] ?? '');

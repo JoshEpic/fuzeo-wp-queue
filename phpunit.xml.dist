@@ -19,8 +19,11 @@
         <testsuite name="Security">
             <directory>tests/Security</directory>
         </testsuite>
-        <testsuite name="MySql">
-            <directory>tests/MySql</directory>
+        <testsuite name="Conformance">
+            <directory>tests/Conformance</directory>
+        </testsuite>
+        <testsuite name="Redis">
+            <directory>tests/Redis</directory>
         </testsuite>
         <testsuite name="Process">
             <directory>tests/Process</directory>

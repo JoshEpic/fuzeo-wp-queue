@@ -17,6 +17,9 @@ final class DriverCapabilities
         public readonly bool $delayedJobs = true,
         public readonly bool $advancedMetrics = false,
         public readonly bool $durable = false,
+        public readonly bool $atomicRateLimits = false,
+        public readonly bool $queueConcurrency = false,
+        public readonly bool $highConcurrency = false,
     ) {
     }
 
@@ -30,6 +33,9 @@ final class DriverCapabilities
             'delayed_jobs' => $this->delayedJobs,
             'advanced_metrics' => $this->advancedMetrics,
             'durable' => $this->durable,
+            'atomic_rate_limits' => $this->atomicRateLimits,
+            'queue_concurrency' => $this->queueConcurrency,
+            'high_concurrency' => $this->highConcurrency,
             default => false,
         };
     }

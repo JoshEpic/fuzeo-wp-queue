@@ -33,6 +33,15 @@ jobs:
           --health-interval=5s
           --health-timeout=5s
           --health-retries=20
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
     steps:
       - uses: actions/checkout@v4
       - uses: shivammathur/setup-php@v2
@@ -40,7 +49,7 @@ jobs:
           php-version: ${{ matrix.php }}
           coverage: none
           tools: composer
-          extensions: pdo_mysql, mysqli, pcntl, posix
+          extensions: pdo_mysql, mysqli, pcntl, posix, redis
       - run: composer install --no-interaction --prefer-dist
       - run: vendor/bin/phpcs
       - run: vendor/bin/phpstan analyse --memory-limit=512M
@@ -50,6 +59,9 @@ jobs:
           FUZEO_QUEUE_TEST_DB_USER: root
           FUZEO_QUEUE_TEST_DB_PASS: root
           FUZEO_QUEUE_TEST_DB_NAME: fuzeo_queue_test
+          FUZEO_QUEUE_TEST_REDIS_HOST: 127.0.0.1
+          FUZEO_QUEUE_TEST_REDIS_PORT: 6379
+          FUZEO_QUEUE_TEST_REDIS_DB: 15
         run: vendor/bin/phpunit
       - name: WordPress test suite
         env:

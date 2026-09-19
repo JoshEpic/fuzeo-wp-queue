@@ -9,6 +9,7 @@ final class Config
     public const DRIVER_UNAVAILABLE = 'unavailable';
     public const DRIVER_MEMORY = 'memory';
     public const DRIVER_MYSQL = 'mysql';
+    public const DRIVER_REDIS = 'redis';
 
     public function __construct(
         public readonly string $driver = self::DRIVER_UNAVAILABLE,
@@ -29,6 +30,12 @@ final class Config
         public readonly int $completedRetentionDays = 7,
         public readonly int $deadRetentionDays = 30,
         public readonly int $defaultJitterPercent = 0,
+        public readonly string $redisDsn = '',
+        public readonly string $redisNamespace = 'local',
+        /** @var array<string, int> */
+        public readonly array $concurrency = [],
+        /** @var list<array<string, mixed>> */
+        public readonly array $rateLimits = [],
     ) {
     }
 
@@ -56,6 +63,10 @@ final class Config
             completedRetentionDays: $this->int($values, 'completed_retention_days', $this->completedRetentionDays),
             deadRetentionDays: $this->int($values, 'dead_retention_days', $this->deadRetentionDays),
             defaultJitterPercent: $this->int($values, 'default_jitter_percent', $this->defaultJitterPercent),
+            redisDsn: $this->stringAllowEmpty($values, 'redis_dsn', $this->redisDsn),
+            redisNamespace: $this->string($values, 'redis_namespace', $this->redisNamespace),
+            concurrency: $this->intMap($values, 'concurrency', $this->concurrency),
+            rateLimits: $this->listOfMaps($values, 'rate_limits', $this->rateLimits),
         );
     }
 
@@ -112,5 +123,79 @@ final class Config
         }
 
         throw new \Fuzeo\Queue\Exceptions\ConfigurationException('Config key ' . $key . ' must be a boolean.');
+    }
+
+    /**
+     * @param array<string, mixed> $values
+     */
+    private function stringAllowEmpty(array $values, string $key, string $default): string
+    {
+        if (!array_key_exists($key, $values) || $values[$key] === null) {
+            return $default;
+        }
+        if (!is_string($values[$key])) {
+            throw new \Fuzeo\Queue\Exceptions\ConfigurationException('Config key ' . $key . ' must be a string.');
+        }
+
+        return $values[$key];
+    }
+
+    /**
+     * @param array<string, mixed> $values
+     * @param array<string, int> $default
+     * @return array<string, int>
+     */
+    private function intMap(array $values, string $key, array $default): array
+    {
+        if (!array_key_exists($key, $values) || $values[$key] === null) {
+            return $default;
+        }
+        $raw = $values[$key];
+        if (is_string($raw) && $raw !== '') {
+            $decoded = json_decode($raw, true);
+            $raw = is_array($decoded) ? $decoded : $raw;
+        }
+        if (!is_array($raw)) {
+            throw new \Fuzeo\Queue\Exceptions\ConfigurationException('Config key ' . $key . ' must be a map of queue => limit.');
+        }
+        $out = [];
+        foreach ($raw as $queue => $max) {
+            if (!is_string($queue) || !is_numeric($max)) {
+                throw new \Fuzeo\Queue\Exceptions\ConfigurationException('Concurrency map values must be integers.');
+            }
+            $out[$queue] = (int) $max;
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param array<string, mixed> $values
+     * @param list<array<string, mixed>> $default
+     * @return list<array<string, mixed>>
+     */
+    private function listOfMaps(array $values, string $key, array $default): array
+    {
+        if (!array_key_exists($key, $values) || $values[$key] === null) {
+            return $default;
+        }
+        $raw = $values[$key];
+        if (is_string($raw) && $raw !== '') {
+            $decoded = json_decode($raw, true);
+            $raw = is_array($decoded) ? $decoded : $raw;
+        }
+        if (!is_array($raw)) {
+            throw new \Fuzeo\Queue\Exceptions\ConfigurationException('Config key ' . $key . ' must be a list.');
+        }
+        $out = [];
+        foreach ($raw as $row) {
+            if (!is_array($row)) {
+                throw new \Fuzeo\Queue\Exceptions\ConfigurationException('Each rate limit must be a map.');
+            }
+            /** @var array<string, mixed> $row */
+            $out[] = $row;
+        }
+
+        return $out;
     }
 }

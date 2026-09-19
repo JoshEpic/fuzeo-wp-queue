@@ -28,5 +28,9 @@ Precedence, highest first:
 | `completed_retention_days` | `FUZEO_QUEUE_COMPLETED_RETENTION_DAYS` | `7` |
 | `dead_retention_days` | `FUZEO_QUEUE_DEAD_RETENTION_DAYS` | `30` |
 | `default_jitter_percent` | `FUZEO_QUEUE_DEFAULT_JITTER_PERCENT` | `0` |
+| `redis_dsn` | `FUZEO_QUEUE_REDIS_DSN` | empty |
+| `redis_namespace` | `FUZEO_QUEUE_REDIS_NAMESPACE` | `local` |
+| `concurrency` | `FUZEO_QUEUE_CONCURRENCY` | `{}` JSON map |
+| `rate_limits` | `FUZEO_QUEUE_RATE_LIMITS` | `[]` JSON list |
 
-Drivers: `mysql` (production when `$wpdb` exists), `memory` (tests), `unavailable` (fail closed), plus `Queue::fake()`.
+Drivers: `mysql`, `redis` (PhpRedis), `memory` (tests), `unavailable` (fail closed), plus `Queue::fake()`. Switching drivers does not migrate jobs. See [Redis](redis.md).

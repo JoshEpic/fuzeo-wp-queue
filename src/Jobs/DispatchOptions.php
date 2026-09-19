@@ -27,6 +27,7 @@ final class DispatchOptions
         public readonly ?int $maxAttempts = null,
         public readonly ?int $timeoutSeconds = null,
         public readonly ?\Fuzeo\Queue\Retry\RetryPolicy $retryPolicy = null,
+        public readonly ?\Fuzeo\Queue\RateLimit\RateLimit $rateLimit = null,
     ) {
     }
 
@@ -96,6 +97,11 @@ final class DispatchOptions
         return $this->cloneWith(['retryPolicy' => $policy]);
     }
 
+    public function withRateLimit(\Fuzeo\Queue\RateLimit\RateLimit $limit): self
+    {
+        return $this->cloneWith(['rateLimit' => $limit]);
+    }
+
     /**
      * @param array<string, mixed> $overrides
      */
@@ -118,6 +124,7 @@ final class DispatchOptions
             maxAttempts: $overrides['maxAttempts'] ?? $this->maxAttempts,
             timeoutSeconds: $overrides['timeoutSeconds'] ?? $this->timeoutSeconds,
             retryPolicy: $overrides['retryPolicy'] ?? $this->retryPolicy,
+            rateLimit: $overrides['rateLimit'] ?? $this->rateLimit,
         );
     }
 }

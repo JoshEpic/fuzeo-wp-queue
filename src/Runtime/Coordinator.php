@@ -9,8 +9,12 @@ use Fuzeo\Queue\Config\ConfigRepository;
 use Fuzeo\Queue\Contracts\Clock;
 use Fuzeo\Queue\Contracts\ExecutionContextResolver;
 use Fuzeo\Queue\Core\QueueManager;
+use Fuzeo\Queue\Concurrency\AdmissionPolicy;
 use Fuzeo\Queue\Drivers\Memory\MemoryDriver;
 use Fuzeo\Queue\Drivers\MySql\MySqlDriver;
+use Fuzeo\Queue\Drivers\Redis\RedisDriver;
+use Fuzeo\Queue\Redis\PhpRedisConnection;
+use Fuzeo\Queue\Redis\RedisSettings;
 use Fuzeo\Queue\Drivers\QueueDriver;
 use Fuzeo\Queue\Drivers\UnavailableDriver;
 use Fuzeo\Queue\Exceptions\ConfigurationException;
@@ -91,6 +95,7 @@ final class Coordinator
         }
 
         $resolved = (new ConfigRepository())->resolve($config);
+        self::noteDriverSwitch($resolved->driver);
         $manager = self::createManager($resolved);
         self::$manager = $manager;
         self::$bootCount = 1;
@@ -148,6 +153,7 @@ final class Coordinator
             'incompatible' => [],
             'diagnostics' => [],
             'runtime' => null,
+            'active_driver' => $GLOBALS['fuzeo_queue_kernel']['active_driver'] ?? null,
         ];
     }
 
@@ -166,6 +172,7 @@ final class Coordinator
         if (!isset($config['driver']) && $driver === null && $connection === null) {
             $resolved = $resolved->merge(['driver' => Config::DRIVER_MEMORY]);
         }
+        self::noteDriverSwitch($resolved->driver);
         $manager = self::createManager($resolved, $driver, $context, $clock, $connection);
         self::$manager = $manager;
         self::$bootCount = 1;
@@ -267,6 +274,20 @@ final class Coordinator
         return null;
     }
 
+    private static function noteDriverSwitch(string $driver): void
+    {
+        $previous = self::kernel()['active_driver'] ?? null;
+        if (is_string($previous) && $previous !== '' && $previous !== $driver) {
+            self::$diagnostics[] = new Diagnostic(
+                'warning',
+                'driver_switch',
+                'Queue driver changed from ' . $previous . ' to ' . $driver
+                . '. Outstanding jobs are not migrated. Drain or replay the previous backend before switching.'
+            );
+        }
+        self::kernelSet('active_driver', $driver);
+    }
+
     private static function makeDriver(Config $config, Clock $clock, ?Connection $connection): QueueDriver
     {
         $name = $config->driver;
@@ -275,13 +296,27 @@ final class Coordinator
         }
 
         return match ($name) {
-            Config::DRIVER_MEMORY => new MemoryDriver($clock),
+            Config::DRIVER_MEMORY => new MemoryDriver($clock, AdmissionPolicy::fromConfig($config)),
             Config::DRIVER_UNAVAILABLE => new UnavailableDriver(),
             Config::DRIVER_MYSQL => self::makeMysqlDriver($connection, $clock, $config),
+            Config::DRIVER_REDIS => self::makeRedisDriver($config, $clock),
             default => throw new ConfigurationException(
-                'Unknown queue driver "' . $config->driver . '". Supported: mysql, memory, unavailable.'
+                'Unknown queue driver "' . $config->driver . '". Supported: mysql, redis, memory, unavailable.'
             ),
         };
+    }
+
+    private static function makeRedisDriver(Config $config, Clock $clock): RedisDriver
+    {
+        $namespace = $config->redisNamespace;
+        if ($namespace === 'local' && function_exists('home_url')) {
+            $namespace = substr(sha1((string) home_url()), 0, 16);
+        }
+        $settings = $config->redisDsn !== ''
+            ? RedisSettings::fromDsn($config->redisDsn, $namespace)
+            : new RedisSettings(namespace: $namespace);
+
+        return new RedisDriver(new PhpRedisConnection($settings), $settings, $clock, $config);
     }
 
     private static function makeMysqlDriver(?Connection $connection, Clock $clock, Config $config): MySqlDriver
@@ -390,6 +425,7 @@ final class Coordinator
                 'incompatible' => [],
                 'diagnostics' => [],
                 'runtime' => null,
+                'active_driver' => null,
             ];
             $GLOBALS['fuzeo_queue_kernel'] = $kernel;
         }

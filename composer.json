@@ -48,6 +48,9 @@
             "@test"
         ]
     },
+    "suggest": {
+        "ext-redis": "Required for the Redis queue driver (PhpRedis)."
+    },
     "config": {
         "sort-packages": true,
         "allow-plugins": {}

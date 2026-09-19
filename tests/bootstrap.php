@@ -6,6 +6,7 @@ use Fuzeo\Queue\Runtime\Coordinator;
 
 require __DIR__ . '/Support/WordPressStubs.php';
 require __DIR__ . '/Support/WpdbStub.php';
+require __DIR__ . '/Support/RedisStubs.php';
 require dirname(__DIR__) . '/vendor/autoload.php';
 
 fuzeo_queue_register_plugins_loaded_listener();

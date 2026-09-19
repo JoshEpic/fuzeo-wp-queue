@@ -10,7 +10,7 @@ use Fuzeo\Queue\Persistence\Schema;
 use Fuzeo\Queue\Support\Dates;
 use Fuzeo\Queue\Support\SystemClock;
 
-final class WorkerRepository
+final class WorkerRepository implements WorkerStore
 {
     public function __construct(
         private readonly Connection $connection,
