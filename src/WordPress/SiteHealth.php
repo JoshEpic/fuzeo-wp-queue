@@ -55,6 +55,10 @@ final class SiteHealth
                 'label' => $this->translate('Fuzeo Queue Redis policy'),
                 'test' => [$this, 'testRedis'],
             ],
+            'fuzeo_queue_execution' => [
+                'label' => $this->translate('Fuzeo Queue execution mode'),
+                'test' => [$this, 'testExecution'],
+            ],
         ];
     }
 
@@ -117,7 +121,8 @@ final class SiteHealth
                     continue;
                 }
                 $status = (string) ($row['status'] ?? '');
-                if ($status !== WorkerStatus::Stopped->value) {
+                $type = (string) ($row['process_type'] ?? 'persistent');
+                if ($status !== WorkerStatus::Stopped->value && $type === 'persistent') {
                     $alive++;
                 }
             }
@@ -135,7 +140,7 @@ final class SiteHealth
             }
             $status = $pending >= $this->backlogCritical ? 'critical' : 'recommended';
 
-            return $this->result($status, 'Jobs are waiting, but no active Fuzeo Queue worker is detected.');
+            return $this->result($status, 'Jobs are waiting, but no active Fuzeo Queue worker is detected. Recommended: persistent `wp fuzeo-queue work`. Alternative: `wp fuzeo-queue work --once` from external cron. Compatibility: enable the bounded WordPress executor.');
         }
         if ($stale > 0) {
             return $this->result('recommended', $stale . ' worker heartbeat(s) are stale.');
@@ -192,6 +197,46 @@ final class SiteHealth
     /**
      * @return array<string, mixed>
      */
+    public function testExecution(): array
+    {
+        if (!Coordinator::isBooted()) {
+            return $this->result('recommended', 'Queue runtime is not booted.');
+        }
+        $exec = Coordinator::get()->execution();
+        $mode = $exec->mode();
+        $snap = $exec->snapshot();
+        if ($mode === \Fuzeo\Queue\Execution\ExecutionMode::Persistent) {
+            return $this->result('good', 'Persistent workers are active.');
+        }
+        if ($mode === \Fuzeo\Queue\Execution\ExecutionMode::CronCli) {
+            return $this->result('good', 'Bounded CLI execution is active via external cron. Persistent workers remain recommended for heavy workloads.');
+        }
+        if ($mode === \Fuzeo\Queue\Execution\ExecutionMode::WordPressCompat) {
+            $warning = (string) ($snap['trigger_warning'] ?? '');
+            if ($warning !== '') {
+                return $this->result('critical', 'WordPress Compatibility Mode is configured but not being triggered. DISABLE_WP_CRON is set and no external cron heartbeat is known.');
+            }
+
+            return $this->result(
+                'recommended',
+                'WordPress Compatibility Mode is active. Jobs are processed in bounded WordPress executions. Persistent workers offer better performance.'
+            );
+        }
+        $pending = 0;
+        $driver = $this->driver();
+        if ($driver instanceof StatusAware) {
+            $pending = (int) ($driver->countsByState()[JobState::Pending->value] ?? 0);
+        }
+        if ($pending > 0) {
+            return $this->result('critical', 'Queued jobs have no executor. Configure persistent workers, external cron, or enable WordPress Compatibility Mode.');
+        }
+
+        return $this->result('good', 'No pending jobs. Configure an executor before dispatching work.');
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
     public function debug(): array
     {
         $driver = $this->driver();
@@ -225,6 +270,7 @@ final class SiteHealth
             'multisite' => $this->wp->isMultisite(),
             'object_cache_dropin' => $this->wp->objectCacheDropInPresent(),
             'redis_version' => (string) ($health?->details['redis_version'] ?? ''),
+            'execution_mode' => Coordinator::isBooted() ? Coordinator::get()->execution()->mode()->value : 'none',
         ];
     }
 

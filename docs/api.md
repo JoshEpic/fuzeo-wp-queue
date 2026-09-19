@@ -1,4 +1,4 @@
-# Public API (1.1)
+# Public API (1.2)
 
 Classification for Fuzeo Queue 1.x. Internal types may change in a minor release.
 
@@ -6,8 +6,9 @@ Classification for Fuzeo Queue 1.x. Internal types may change in a minor release
 
 | Surface | Types / names |
 | --- | --- |
-| Facade | `Fuzeo\Queue\Queue`, `Queue::interop()` |
+| Facade | `Fuzeo\Queue\Queue`, `Queue::interop()`, `Queue::execution()` |
 | Interop (1.1) | `Interop\Interop`, `Interop\AsyncRuntime`, `Interop\RuntimePolicy`, `Interop\FakeAsyncRuntime`, descriptors via `Interop::cron` / `Interop::actionScheduler` |
+| Execution (1.2) | `Jobs\RequiresPersistentWorker`, `Jobs\RequiresExecutionCapabilities`, `PendingDispatch::requiresPersistentWorker()`, `execution()->tick()` |
 | Jobs | `Jobs\Job`, `Jobs\Handler`, `Jobs\ContextualHandler`, `Jobs\JobContext`, `Jobs\Envelope`, `Jobs\Origin`, `Jobs\DispatchOptions`, `Jobs\DispatchResult`, `Jobs\UniqueJob`, `Jobs\JobState`, `Jobs\ExecutionContext`, `Jobs\ExecutionScope` |
 | Retry | `Retry\RetryPolicy`, `Retry\Retryable`, `Exceptions\RetryableException`, `Exceptions\TerminalException`, `Exceptions\RetryAfterException` |
 | Schedule | `Queue::schedule()`, `Schedule\ScheduleBook` builders |

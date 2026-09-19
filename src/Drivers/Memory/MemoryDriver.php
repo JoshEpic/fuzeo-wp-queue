@@ -160,6 +160,12 @@ final class MemoryDriver implements QueueDriver, FailureStore, StatusAware, Prov
             if ($envelope->availableAt > $now) {
                 continue;
             }
+            if ($request->executionClass !== null && $envelope->executionClass()->value !== $request->executionClass) {
+                continue;
+            }
+            if ($request->maxTimeoutSeconds !== null && $envelope->timeoutSeconds > $request->maxTimeoutSeconds) {
+                continue;
+            }
             $candidates[] = $envelope;
         }
         usort($candidates, fn (Envelope $a, Envelope $b): int => $this->isBetter($a, $b) ? -1 : 1);

@@ -203,6 +203,45 @@ final class RestRegistrar
 
             return Coordinator::get()->interop()->reconcile(self::string($req, 'migration_id'))->toArray();
         });
+        self::route('/compat/status', $get, static function (): array {
+            self::operator();
+
+            return Coordinator::get()->execution()->snapshot();
+        });
+        self::routeWrite('/compat/run', static function ($req): array {
+            $op = self::operator();
+            $op->assertManage($op->currentSiteId);
+            $force = self::bool($req, 'force');
+
+            return Coordinator::get()->execution()->tick($force, true)->toArray();
+        });
+        self::route('/compat/settings', $get, static function (): array {
+            self::operator();
+            $exec = Coordinator::get()->execution();
+            $config = Coordinator::get()->config();
+
+            return [
+                'compatibility_enabled' => $exec->isEnabled(),
+                'compatibility_max_runtime' => $exec->runtimeBudgetSeconds(),
+                'compatibility_max_jobs' => $exec->maxJobs(),
+                'compatibility_allowed_queues' => $exec->allowedQueues(),
+                'compatibility_stale_worker_grace' => $config->compatibilityStaleWorkerGrace,
+            ];
+        });
+        self::routeWrite('/compat/settings', static function ($req): array {
+            $op = self::operator();
+            $op->assertManage($op->currentSiteId);
+            $enabled = self::bool($req, 'compatibility_enabled');
+            $exec = Coordinator::get()->execution();
+            $state = $enabled ? $exec->enable() : $exec->disable();
+            Coordinator::get()->operations()->recordEvent(
+                $enabled ? 'compat.enabled' : 'compat.disabled',
+                'execution',
+                'compat'
+            );
+
+            return $state->toArray();
+        });
     }
 
     /**

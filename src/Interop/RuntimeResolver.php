@@ -110,6 +110,7 @@ final class RuntimeResolver
             'legacy_pending' => $legacy,
             'fully_transitioned' => $selection->active === RuntimeName::FuzeoQueue && $legacy === 0,
             'reason' => $selection->reason,
+            'execution_mode' => $this->executionMode(),
         ];
     }
 
@@ -127,6 +128,18 @@ final class RuntimeResolver
             return $this->queue->driver()->health()->ok;
         } catch (\Throwable) {
             return false;
+        }
+    }
+
+    private function executionMode(): string
+    {
+        if ($this->queue === null) {
+            return 'none';
+        }
+        try {
+            return $this->queue->execution()->mode()->value;
+        } catch (\Throwable) {
+            return 'none';
         }
     }
 }

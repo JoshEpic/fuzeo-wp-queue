@@ -1,6 +1,6 @@
 # Semantic versioning
 
-Fuzeo Queue 1.x follows SemVer. 1.1 adds interoperability APIs without breaking 1.0 contracts.
+Fuzeo Queue 1.x follows SemVer. 1.2 adds compatibility execution without breaking 1.0/1.1 contracts.
 
 ## Breaking (major)
 

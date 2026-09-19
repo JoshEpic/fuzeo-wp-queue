@@ -24,6 +24,11 @@ final class RedisKeys
         return $this->prefix . ':ready:' . $queue;
     }
 
+    public function compat(string $queue): string
+    {
+        return $this->prefix . ':compat:' . $queue;
+    }
+
     public function delayed(string $queue): string
     {
         return $this->prefix . ':delayed:' . $queue;

@@ -26,6 +26,7 @@ final class EnvelopeFactory
         private readonly int $defaultMaxAttempts = 3,
         private readonly int $defaultTimeoutSeconds = 60,
         private readonly MetadataLimits $metadataLimits = new MetadataLimits(),
+        private readonly ?\Fuzeo\Queue\Config\Config $config = null,
     ) {
     }
 
@@ -73,6 +74,15 @@ final class EnvelopeFactory
             $uniqueKey = UniqueKey::normalize($uniqueKey);
             $metadata['_unique'] = ['ttl' => $options->uniqueTtlSeconds];
         }
+        $timeout = $options->timeoutSeconds ?? $this->defaultTimeoutSeconds;
+        $queue = QueueName::normalize($options->queue ?? QueueName::DEFAULT);
+        $class = \Fuzeo\Queue\Execution\ExecutionClassifier::classify(
+            $job,
+            $options,
+            $this->config ?? new \Fuzeo\Queue\Config\Config(),
+            $queue,
+        );
+        $metadata['_execution'] = ['class' => $class->value];
 
         return new Envelope(
             jobId: $this->resolveJobId($options, $now),
@@ -80,11 +90,11 @@ final class EnvelopeFactory
             jobType: $type,
             schemaVersion: $registered->schemaVersion,
             payload: $payload,
-            queue: QueueName::normalize($options->queue ?? QueueName::DEFAULT),
+            queue: $queue,
             priority: $options->priority,
             attempt: 0,
             maxAttempts: $maxAttempts,
-            timeoutSeconds: $options->timeoutSeconds ?? $this->defaultTimeoutSeconds,
+            timeoutSeconds: $timeout,
             availableAt: $availableAt,
             context: $context,
             origin: $origin,
@@ -127,6 +137,15 @@ final class EnvelopeFactory
         if ($uniqueKey !== null) {
             $metadata['_unique'] = ['ttl' => $options->uniqueTtlSeconds];
         }
+        $timeout = $options->timeoutSeconds ?? $this->defaultTimeoutSeconds;
+        $queue = QueueName::normalize($options->queue ?? QueueName::DEFAULT);
+        $class = \Fuzeo\Queue\Execution\ExecutionClassifier::classify(
+            null,
+            $options,
+            $this->config ?? new \Fuzeo\Queue\Config\Config(),
+            $queue,
+        );
+        $metadata['_execution'] = ['class' => $class->value];
 
         return new Envelope(
             jobId: $this->resolveJobId($options, $now),
@@ -134,11 +153,11 @@ final class EnvelopeFactory
             jobType: $type,
             schemaVersion: $registered->schemaVersion,
             payload: $payload,
-            queue: QueueName::normalize($options->queue ?? QueueName::DEFAULT),
+            queue: $queue,
             priority: $options->priority,
             attempt: 0,
             maxAttempts: $maxAttempts,
-            timeoutSeconds: $options->timeoutSeconds ?? $this->defaultTimeoutSeconds,
+            timeoutSeconds: $timeout,
             availableAt: $availableAt,
             context: $context,
             origin: $origin,

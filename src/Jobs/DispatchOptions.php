@@ -30,6 +30,7 @@ final class DispatchOptions
         public readonly ?\Fuzeo\Queue\Retry\RetryPolicy $retryPolicy = null,
         public readonly ?\Fuzeo\Queue\RateLimit\RateLimit $rateLimit = null,
         public readonly ?string $jobId = null,
+        public readonly ?\Fuzeo\Queue\Execution\ExecutionClass $executionClass = null,
     ) {
     }
 
@@ -129,6 +130,21 @@ final class DispatchOptions
         return $this->cloneWith(['rateLimit' => $limit]);
     }
 
+    public function withTimeout(int $seconds): self
+    {
+        return $this->cloneWith(['timeoutSeconds' => $seconds]);
+    }
+
+    public function withExecutionClass(\Fuzeo\Queue\Execution\ExecutionClass $class): self
+    {
+        return $this->cloneWith(['executionClass' => $class]);
+    }
+
+    public function requiresPersistentWorker(): self
+    {
+        return $this->withExecutionClass(\Fuzeo\Queue\Execution\ExecutionClass::Persistent);
+    }
+
     /**
      * @param array<string, mixed> $overrides
      */
@@ -154,6 +170,7 @@ final class DispatchOptions
             retryPolicy: $overrides['retryPolicy'] ?? $this->retryPolicy,
             rateLimit: $overrides['rateLimit'] ?? $this->rateLimit,
             jobId: array_key_exists('jobId', $overrides) ? $overrides['jobId'] : $this->jobId,
+            executionClass: array_key_exists('executionClass', $overrides) ? $overrides['executionClass'] : $this->executionClass,
         );
     }
 }

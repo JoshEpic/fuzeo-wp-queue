@@ -27,8 +27,8 @@ final class WorkerRepository implements WorkerStore
         $this->connection->execute(
             'INSERT INTO ' . $this->table() . ' (
                 worker_id, hostname, pid, started_at, last_heartbeat_at, queues, status,
-                memory_bytes, processed_count, runtime_version, runtime_generation
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                memory_bytes, processed_count, runtime_version, runtime_generation, process_type
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
             [
                 $identity->workerId,
                 $identity->hostname,
@@ -41,6 +41,7 @@ final class WorkerRepository implements WorkerStore
                 0,
                 $identity->runtimeVersion,
                 $identity->deploymentGeneration !== '' ? $identity->deploymentGeneration : $identity->runtimeGeneration,
+                $identity->processType->value,
             ]
         );
     }

@@ -121,6 +121,7 @@ final class Operations
             'no_workers' => $pending > 0 && $alive === 0,
             'timezone' => 'UTC',
             'polled' => true,
+            'execution_mode' => $this->manager->execution()->mode()->value,
         ];
     }
 
@@ -437,6 +438,7 @@ final class Operations
                 'schema_version' => isset($row['schema_version']) ? (int) $row['schema_version'] : null,
                 'recycle_reason' => $row['recycle_reason'] ?? null,
                 'runtime_version' => (string) ($row['runtime_version'] ?? ''),
+                'process_type' => (string) ($row['process_type'] ?? 'persistent'),
                 'driver' => $this->manager->config()->driver,
             ];
         }
@@ -759,6 +761,14 @@ final class Operations
         ];
     }
 
+    public function recordCronWorker(): void
+    {
+        try {
+            $this->manager->execution()->recordCronWorker();
+        } catch (\Throwable) {
+        }
+    }
+
     /**
      * @return array<string, mixed>
      */
@@ -800,6 +810,10 @@ final class Operations
             'default_queue' => $config->defaultQueue,
             'payloads_included' => false,
         ];
+        try {
+            $base['execution'] = $this->manager->execution()->snapshot();
+        } catch (\Throwable) {
+        }
 
         try {
             return array_merge($base, $this->manager->interop()->diagnostics());

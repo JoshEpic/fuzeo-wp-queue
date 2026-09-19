@@ -11,7 +11,7 @@ namespace Fuzeo\Queue\Redis;
  */
 final class RedisScripts
 {
-    public const VERSION = '4';
+    public const VERSION = '5';
 
     public const ENQUEUE = <<<'LUA'
 local jobKey = KEYS[1]
@@ -35,11 +35,15 @@ if uniqueKey ~= nil and uniqueKey ~= '' then
   end
   redis.call('SET', uniqueKey, jobId)
 end
-redis.call('HSET', jobKey, 'envelope', envelope, 'state', state, 'available_at', available, 'queue', queue, 'unique_redis_key', uniqueKey or '', 'unique_ttl', ARGV[9] or '0')
+local compatEligible = ARGV[10] or '0'
+redis.call('HSET', jobKey, 'envelope', envelope, 'state', state, 'available_at', available, 'queue', queue, 'unique_redis_key', uniqueKey or '', 'unique_ttl', ARGV[9] or '0', 'compat_eligible', compatEligible)
 if tonumber(available) > tonumber(ARGV[7]) then
   redis.call('ZADD', KEYS[5], available, jobId)
 else
   redis.call('ZADD', indexKey, score, jobId)
+  if compatEligible == '1' then
+    redis.call('ZADD', KEYS[6], score, jobId)
+  end
 end
 redis.call('SADD', queueSet, queue)
 redis.call('RPUSH', wakeup, '1')
@@ -58,7 +62,13 @@ local concLimit = tonumber(ARGV[7])
 local rateKey = ARGV[8]
 local rateCap = tonumber(ARGV[9])
 local rateRefill = tonumber(ARGV[10])
-local ready = ns .. ':ready:' .. queue
+local lane = ARGV[11] or 'all'
+local readyAll = ns .. ':ready:' .. queue
+local readyCompat = ns .. ':compat:' .. queue
+local ready = readyAll
+if lane == 'compat' then
+  ready = readyCompat
+end
 local delayed = ns .. ':delayed:' .. queue
 local reserved = ns .. ':reserved'
 local conc = ns .. ':conc:' .. queue
@@ -86,7 +96,10 @@ for _, id in ipairs(due) do
   if raw then
     local env = parse(raw)
     local av = tonumber(redis.call('HGET', jobKey(id), 'available_at') or now)
-    redis.call('ZADD', ready, score(env['priority'] or 0, av), id)
+    redis.call('ZADD', readyAll, score(env['priority'] or 0, av), id)
+    if redis.call('HGET', jobKey(id), 'compat_eligible') == '1' then
+      redis.call('ZADD', readyCompat, score(env['priority'] or 0, av), id)
+    end
   end
 end
 
@@ -116,6 +129,9 @@ for _, id in ipairs(expired) do
         redis.call('ZADD', ns .. ':delayed:' .. q, av, id)
       else
         redis.call('ZADD', ns .. ':ready:' .. q, score(env['priority'] or 0, av), id)
+        if redis.call('HGET', jobKey(id), 'compat_eligible') == '1' then
+          redis.call('ZADD', ns .. ':compat:' .. q, score(env['priority'] or 0, av), id)
+        end
       end
     end
     end
@@ -178,7 +194,8 @@ for _, id in ipairs(candidates) do
         attempt = attempt + 1
         env['attempt'] = attempt
         env['state'] = 'reserved'
-        redis.call('ZREM', ready, id)
+        redis.call('ZREM', readyAll, id)
+        redis.call('ZREM', readyCompat, id)
         redis.call('ZADD', reserved, lease, id)
         if concLimit > 0 then
           redis.call('ZADD', conc, lease, id)
@@ -265,6 +282,9 @@ if available > now then
   redis.call('ZADD', KEYS[5], available, jobId)
 else
   redis.call('ZADD', index, score, jobId)
+  if redis.call('HGET', jobKey, 'compat_eligible') == '1' then
+    redis.call('ZADD', KEYS[6], score, jobId)
+  end
 end
 return 1
 LUA;
@@ -316,6 +336,9 @@ else
     redis.call('ZADD', delayedOrReady, available, jobId)
   else
     redis.call('ZADD', dest, score, jobId)
+    if redis.call('HGET', jobKey, 'compat_eligible') == '1' then
+      redis.call('ZADD', KEYS[7], score, jobId)
+    end
   end
 end
 return 1
@@ -369,6 +392,9 @@ env['available_at'] = ARGV[4]
 redis.call('HSET', jobKey, 'envelope', cjson.encode(env), 'state', 'pending', 'attempt', '0', 'available_at', now, 'token', '')
 redis.call('ZREM', dead, jobId)
 redis.call('ZADD', ready, score, jobId)
+if redis.call('HGET', jobKey, 'compat_eligible') == '1' then
+  redis.call('ZADD', KEYS[4], score, jobId)
+end
 return 1
 LUA;
 
@@ -444,6 +470,7 @@ if state == 'pending' then
   env['state'] = 'cancelled'
   redis.call('ZREM', ready, jobId)
   redis.call('ZREM', delayed, jobId)
+  redis.call('ZREM', KEYS[6], jobId)
   redis.call('HSET', jobKey, 'envelope', cjson.encode(env), 'state', 'cancelled', 'cancel_requested', '1', 'token', '')
   local uk = redis.call('HGET', jobKey, 'unique_redis_key')
   if uk and uk ~= '' then

@@ -14,7 +14,7 @@ Reasons:
 WP_CLI::add_command('fuzeo-queue', QueueCommand::class);
 ```
 
-Subcommands: `work`, `schedule-work`, `schedule-run`, `schedules`, `unique`, `idempotency`, `status`, `workers`, `queues`, `jobs`, `failed`, `prune`, `chains`, `batches`, `cancel`, `reconcile`, `health`, `metrics`, `diagnostics`, `restart`, `drain`, `ready`, `migrate`, `interop`.
+Subcommands: `work`, `work --once`, `tick`, `schedule-work`, `schedule-run`, `schedules`, `unique`, `idempotency`, `status`, `workers`, `queues`, `jobs`, `failed`, `prune`, `chains`, `batches`, `cancel`, `reconcile`, `health`, `metrics`, `diagnostics`, `restart`, `drain`, `ready`, `migrate`, `interop`, `compat`.
 
 `diagnostics --format=json` is the paste-safe support snapshot (versions, schema, driver, workers, health; no job payloads). Exit codes for `ready` / `migrate --check` / drain wait are documented in [exit-codes.md](exit-codes.md).
 
@@ -35,4 +35,4 @@ One menu slug: `fuzeo-queue`.
 - Single site: `fuzeo_queue_view` / `fuzeo_queue_manage` or `manage_options`
 - Network admin: `fuzeo_queue_view_network` / `fuzeo_queue_manage_network` or `manage_network_options`
 
-Pages: Overview, Queues, Jobs, Failed, Workers, Schedules, Chains & Batches, Metrics, Diagnostics, Interoperability. REST namespace `fuzeo-queue/v1`. Payloads are redacted and hidden by default. Retry warns about at-least-once delivery. Running jobs can request cancel; they cannot be killed.
+Pages: Overview, Queues, Jobs, Failed, Workers, Schedules, Chains & Batches, Metrics, Diagnostics, Execution, Interoperability. REST namespace `fuzeo-queue/v1`. Payloads are redacted and hidden by default. Retry warns about at-least-once delivery. Running jobs can request cancel; they cannot be killed.

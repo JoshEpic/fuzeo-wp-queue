@@ -33,6 +33,7 @@ final class CliRegistrar
 
         \WP_CLI::add_command(self::COMMAND, QueueCommand::class);
         \WP_CLI::add_command(self::COMMAND . ' interop', InteropCommand::class);
+        \WP_CLI::add_command(self::COMMAND . ' compat', CompatCommand::class);
     }
 
     public static function registrationCount(): int

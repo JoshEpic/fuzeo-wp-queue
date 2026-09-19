@@ -59,6 +59,14 @@ Precedence, highest first:
 | `max_tag_length` | `FUZEO_QUEUE_MAX_TAG_LENGTH` | `64` |
 | `max_metadata_bytes` | `FUZEO_QUEUE_MAX_METADATA_BYTES` | `8192` |
 | `max_metadata_key_length` | `FUZEO_QUEUE_MAX_METADATA_KEY_LENGTH` | `64` |
+| `compatibility_enabled` | `FUZEO_QUEUE_COMPATIBILITY_ENABLED` | `false` |
+| `compatibility_max_runtime` | `FUZEO_QUEUE_COMPATIBILITY_MAX_RUNTIME` | `18` (max 25) |
+| `compatibility_max_jobs` | `FUZEO_QUEUE_COMPATIBILITY_MAX_JOBS` | `5` (max 25) |
+| `compatibility_allowed_queues` | `FUZEO_QUEUE_COMPATIBILITY_ALLOWED_QUEUES` | empty → default queue |
+| `compatibility_stale_worker_grace` | `FUZEO_QUEUE_COMPATIBILITY_STALE_WORKER_GRACE` | `90` |
+| `compatibility_max_job_timeout` | `FUZEO_QUEUE_COMPATIBILITY_MAX_JOB_TIMEOUT` | `60` |
+| `persistent_queues` | `FUZEO_QUEUE_PERSISTENT_QUEUES` | `[]` |
+| `execution_mode` | `FUZEO_QUEUE_EXECUTION_MODE` | empty (infer) |
 
 Invalid values fail at boot (`ConfigurationException`) with an actionable message. Changing driver, Redis DSN, lease, or timeout requires a worker recycle.
 

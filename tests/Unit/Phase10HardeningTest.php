@@ -36,7 +36,7 @@ final class Phase10HardeningTest extends TestCase
 
     public function testPackageIsOneZeroAndSeriesOne(): void
     {
-        self::assertSame('1.1.0', PackageInfo::VERSION);
+        self::assertSame('1.2.0', PackageInfo::VERSION);
         self::assertSame(1, PackageInfo::COMPATIBILITY_SERIES);
         self::assertSame(1, PackageInfo::ENVELOPE_VERSION);
     }

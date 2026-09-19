@@ -96,6 +96,8 @@ final class QueueManager
 
     private ?InteropManager $interop = null;
 
+    private ?\Fuzeo\Queue\Execution\ExecutionRuntime $execution = null;
+
     public function __construct(
         private Config $config,
         private readonly JobRegistry $registry,
@@ -205,6 +207,16 @@ final class QueueManager
         return $this->interop ??= InteropManager::fromManager($this, $this->interopStore);
     }
 
+    public function execution(): \Fuzeo\Queue\Execution\ExecutionRuntime
+    {
+        return $this->execution ??= \Fuzeo\Queue\Execution\ExecutionRuntime::fromManager($this);
+    }
+
+    public function useExecution(\Fuzeo\Queue\Execution\ExecutionRuntime $execution): void
+    {
+        $this->execution = $execution;
+    }
+
     public function useInterop(InteropManager $interop): void
     {
         $this->interop = $interop;
@@ -287,6 +299,7 @@ final class QueueManager
             $this->config->defaultMaxAttempts,
             $this->config->defaultTimeoutSeconds,
             MetadataLimits::fromConfig($this->config),
+            $this->config,
         );
 
         return new Dispatcher($factory, $driver, $this->config, $this->fake, $this->clock, $this->recorder, $this);

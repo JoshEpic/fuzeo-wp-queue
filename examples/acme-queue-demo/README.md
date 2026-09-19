@@ -19,7 +19,7 @@ Point Composer at the local path while developing this repo:
 1. Load `vendor/autoload.php` from the plugin file (already in `acme-queue-demo.php`).
 2. Register origin + job on `fuzeo_queue_ready`.
 3. Dispatch `new ProcessOrder(123)`.
-4. Run `wp fuzeo-queue work`.
+4. Run `wp fuzeo-queue work` (recommended). On shared hosting, `wp fuzeo-queue work --once` from cron, or enable WordPress compatibility mode for light jobs. `ImportCatalog` is a persistent-only example.
 5. Copy `tests/ProcessOrderTest.php` into your plugin test suite.
 
 This example has no Fuzeo commercial dependencies.

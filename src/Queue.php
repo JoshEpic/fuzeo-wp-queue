@@ -93,6 +93,11 @@ final class Queue
         return self::runtime()->interop();
     }
 
+    public static function execution(): \Fuzeo\Queue\Execution\ExecutionRuntime
+    {
+        return self::runtime()->execution();
+    }
+
     public static function fake(): FakeQueue
     {
         return self::runtime()->fake();

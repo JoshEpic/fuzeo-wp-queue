@@ -172,6 +172,11 @@ final class RedisDriver implements QueueDriver, FailureStore, ReliableAcknowledg
         $identity = UniqueIdentity::forJob($envelope);
         $uniqueKey = $identity !== null ? $this->keys->unique($identity->hash) : '';
         $ttl = UniquePolicy::ttlSeconds($envelope) ?? 0;
+        $eligible = \Fuzeo\Queue\Execution\ExecutionClassifier::compatEligible(
+            $envelope->executionClass(),
+            $envelope->timeoutSeconds,
+            $this->config
+        ) ? '1' : '0';
         $raw = $this->scripts->run(
             'enqueue',
             RedisScripts::ENQUEUE,
@@ -181,6 +186,7 @@ final class RedisDriver implements QueueDriver, FailureStore, ReliableAcknowledg
                 $this->keys->queues(),
                 $this->keys->wakeup($envelope->queue),
                 $this->keys->delayed($envelope->queue),
+                $this->keys->compat($envelope->queue),
             ],
             [
                 $this->encode($envelope),
@@ -192,6 +198,7 @@ final class RedisDriver implements QueueDriver, FailureStore, ReliableAcknowledg
                 (string) $now,
                 $uniqueKey,
                 (string) $ttl,
+                $eligible,
             ]
         );
         $result = is_array($raw) ? $raw : [1, $envelope->jobId];
@@ -239,6 +246,7 @@ final class RedisDriver implements QueueDriver, FailureStore, ReliableAcknowledg
                 $rate?->key ?? '',
                 (string) ($rate?->capacity ?? 0),
                 (string) ($rate?->refillPerSecond ?? 0),
+                $request->executionClass === 'standard' ? 'compat' : 'all',
             ]
         ));
         if ($result === []) {
@@ -320,6 +328,7 @@ final class RedisDriver implements QueueDriver, FailureStore, ReliableAcknowledg
                 $this->keys->concurrency($reservation->envelope->queue),
                 $this->keys->ready($reservation->envelope->queue),
                 $this->keys->delayed($reservation->envelope->queue),
+                $this->keys->compat($reservation->envelope->queue),
             ],
             [
                 $reservation->token->value,
@@ -389,6 +398,7 @@ final class RedisDriver implements QueueDriver, FailureStore, ReliableAcknowledg
                 $this->keys->attempts($reservation->envelope->jobId),
                 $dest,
                 $delayed,
+                $this->keys->compat($reservation->envelope->queue),
             ],
             [
                 $reservation->token->value,
@@ -461,7 +471,7 @@ final class RedisDriver implements QueueDriver, FailureStore, ReliableAcknowledg
         $result = $this->scripts->run(
             'revive',
             RedisScripts::REVIVE,
-            [$this->keys->job($jobId), $this->keys->dead(), $this->keys->ready($current->queue)],
+            [$this->keys->job($jobId), $this->keys->dead(), $this->keys->ready($current->queue), $this->keys->compat($current->queue)],
             [
                 $jobId,
                 (string) $now->getTimestamp(),
@@ -662,6 +672,7 @@ final class RedisDriver implements QueueDriver, FailureStore, ReliableAcknowledg
                 $this->keys->delayed($queueName),
                 $this->keys->reserved(),
                 $this->keys->concurrency($queueName),
+                $this->keys->compat($queueName),
             ],
             [$jobId, (string) $this->clock->now()->getTimestamp()]
         );

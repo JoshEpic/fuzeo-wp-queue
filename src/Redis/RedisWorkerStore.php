@@ -39,6 +39,7 @@ final class RedisWorkerStore implements WorkerStore
             'deployment_generation' => $identity->deploymentGeneration !== '' ? $identity->deploymentGeneration : $identity->runtimeGeneration,
             'schema_version' => (string) $identity->schemaVersion,
             'restart_generation' => $identity->restartGeneration,
+            'process_type' => $identity->processType->value,
         ]);
         $this->redis->command('SADD', [$this->keys->workers(), $identity->workerId]);
     }

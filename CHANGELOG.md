@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.2.0 - 2026-09-19
+
+Compatibility execution modes: persistent workers remain recommended; one-shot CLI/`tick` for external cron; optional bounded WordPress compatibility executor that uses the real Queue backend.
+
+### Added
+
+- Execution modes `persistent` / `cron_cli` / `wordpress_compat` / `none` with admin, Site Health, CLI, REST, diagnostics
+- `wp fuzeo-queue work --once`, `wp fuzeo-queue tick`, `wp fuzeo-queue compat …`
+- Schema 8 indexed `execution_class` + `timeout_seconds`; Redis Lua 5 `compat:{queue}` ready set
+- `RequiresPersistentWorker` and optional capability-aware reservation filters
+
+### Upgrade
+
+Deploy 1.2, `wp fuzeo-queue migrate --check` (MySQL schema 8), recycle workers. Compatibility series remains 1. Envelope v1 unchanged. See [UPGRADING.md](UPGRADING.md).
+
 ## 1.1.0 - 2026-09-19
 
 WordPress interoperability: Action Scheduler and WP-Cron discovery, explicit migration descriptors, Queue-first / Action Scheduler fallback, and an Interoperability admin/CLI/REST surface.

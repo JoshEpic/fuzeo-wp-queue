@@ -128,6 +128,14 @@ final class ConfigRepository
             'FUZEO_QUEUE_MAX_TAG_LENGTH' => 'max_tag_length',
             'FUZEO_QUEUE_MAX_METADATA_BYTES' => 'max_metadata_bytes',
             'FUZEO_QUEUE_MAX_METADATA_KEY_LENGTH' => 'max_metadata_key_length',
+            'FUZEO_QUEUE_COMPATIBILITY_ENABLED' => 'compatibility_enabled',
+            'FUZEO_QUEUE_COMPATIBILITY_MAX_RUNTIME' => 'compatibility_max_runtime',
+            'FUZEO_QUEUE_COMPATIBILITY_MAX_JOBS' => 'compatibility_max_jobs',
+            'FUZEO_QUEUE_COMPATIBILITY_ALLOWED_QUEUES' => 'compatibility_allowed_queues',
+            'FUZEO_QUEUE_COMPATIBILITY_STALE_WORKER_GRACE' => 'compatibility_stale_worker_grace',
+            'FUZEO_QUEUE_COMPATIBILITY_MAX_JOB_TIMEOUT' => 'compatibility_max_job_timeout',
+            'FUZEO_QUEUE_PERSISTENT_QUEUES' => 'persistent_queues',
+            'FUZEO_QUEUE_EXECUTION_MODE' => 'execution_mode',
         ];
 
         $values = [];

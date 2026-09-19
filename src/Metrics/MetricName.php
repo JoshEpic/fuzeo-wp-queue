@@ -24,6 +24,10 @@ final class MetricName
     public const RETRY_DELAY_MS = 'retry_delay_ms';
     public const SCHEDULE_DISPATCHED = 'schedule_dispatched';
     public const SCHEDULE_MISSED = 'schedule_missed';
+    public const COMPAT_TICKS = 'compat_ticks';
+    public const COMPAT_JOBS_PROCESSED = 'compat_jobs_processed';
+    public const COMPAT_TICKS_FAILED = 'compat_ticks_failed';
+    public const COMPAT_JOBS_BLOCKED = 'compat_jobs_blocked';
 
     /**
      * @return list<string>
@@ -46,6 +50,10 @@ final class MetricName
             self::RETRY_DELAY_MS,
             self::SCHEDULE_DISPATCHED,
             self::SCHEDULE_MISSED,
+            self::COMPAT_TICKS,
+            self::COMPAT_JOBS_PROCESSED,
+            self::COMPAT_TICKS_FAILED,
+            self::COMPAT_JOBS_BLOCKED,
         ];
     }
 

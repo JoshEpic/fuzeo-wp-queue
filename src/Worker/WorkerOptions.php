@@ -27,6 +27,9 @@ final class WorkerOptions
         public readonly bool $runtimeReset = true,
         public readonly bool $recycleOnContextError = true,
         public readonly string $processTitle = '',
+        public readonly \Fuzeo\Queue\Execution\ProcessType $processType = \Fuzeo\Queue\Execution\ProcessType::Persistent,
+        public readonly ?string $executionClass = null,
+        public readonly ?int $maxTimeoutSeconds = null,
     ) {
         if ($this->queues === []) {
             throw new \Fuzeo\Queue\Exceptions\QueueException('A worker must listen to at least one queue.');
@@ -53,21 +56,33 @@ final class WorkerOptions
         }
         $list = array_values(array_filter(array_map('trim', explode(',', $queues))));
         $defaults = $config ?? new Config();
+        $once = isset($flags['once']);
+        $maxJobs = self::intFlag($flags, 'max-jobs', $once ? 25 : $defaults->workerMaxJobs);
+        $maxRuntime = self::intFlag($flags, 'max-runtime', $once ? 50 : $defaults->workerMaxRuntimeSeconds);
+        $sleep = self::intFlag($flags, 'sleep', $once ? 0 : $defaults->workerSleepSeconds);
+        $processType = \Fuzeo\Queue\Execution\ProcessType::Persistent;
+        if (isset($flags['process-type']) && is_string($flags['process-type'])) {
+            $processType = \Fuzeo\Queue\Execution\ProcessType::tryFrom($flags['process-type'])
+                ?? \Fuzeo\Queue\Execution\ProcessType::Persistent;
+        } elseif ($once || ($sleep === 0 && $maxJobs > 0 && $maxRuntime > 0 && $maxRuntime <= 120)) {
+            $processType = \Fuzeo\Queue\Execution\ProcessType::CronCli;
+        }
 
         return new self(
             queues: $list === [] ? [$defaultQueue] : array_map([QueueName::class, 'normalize'], $list),
-            sleepSeconds: self::intFlag($flags, 'sleep', $defaults->workerSleepSeconds),
+            sleepSeconds: $sleep,
             timeoutSeconds: self::intFlag($flags, 'timeout', $defaults->workerTimeoutSeconds),
             leaseSeconds: self::intFlag($flags, 'lease', $defaults->leaseSeconds),
             memoryBytes: self::memoryFlag($flags['memory'] ?? $defaults->workerMemoryBytes),
-            maxJobs: self::intFlag($flags, 'max-jobs', $defaults->workerMaxJobs),
-            maxRuntimeSeconds: self::intFlag($flags, 'max-runtime', $defaults->workerMaxRuntimeSeconds),
+            maxJobs: $maxJobs,
+            maxRuntimeSeconds: $maxRuntime,
             heartbeatIntervalSeconds: $defaults->heartbeatIntervalSeconds,
             staleWorkerSeconds: $defaults->staleWorkerSeconds,
             generationCheckInterval: $defaults->generationCheckInterval,
             gcInterval: $defaults->gcInterval,
             runtimeReset: $defaults->runtimeReset,
             recycleOnContextError: $defaults->workerRecycleOnContextError,
+            processType: $processType,
         );
     }
 

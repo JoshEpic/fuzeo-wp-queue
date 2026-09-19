@@ -130,6 +130,17 @@ final class Envelope
         return $this->cloneWith(['availableAt' => Dates::utc($availableAt)]);
     }
 
+    public function executionClass(): \Fuzeo\Queue\Execution\ExecutionClass
+    {
+        $meta = $this->metadata['_execution'] ?? null;
+        if (is_array($meta) && isset($meta['class']) && is_string($meta['class'])) {
+            return \Fuzeo\Queue\Execution\ExecutionClass::tryFrom($meta['class'])
+                ?? \Fuzeo\Queue\Execution\ExecutionClass::Standard;
+        }
+
+        return \Fuzeo\Queue\Execution\ExecutionClass::Standard;
+    }
+
     /**
      * @return array<string, mixed>
      */

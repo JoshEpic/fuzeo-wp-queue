@@ -45,6 +45,12 @@ final class QueueCommand
      * [--max-runtime=<seconds>]
      * : Recycle after this runtime. 0 is unlimited.
      *
+     * [--once]
+     * : One-shot CLI worker for external cron: default --max-jobs=25 --max-runtime=50 --sleep=0.
+     *
+     * [--process-type=<type>]
+     * : persistent, cron_cli, or wordpress_compat. Inferred from --once when omitted.
+     *
      * @param array<int, string> $args
      * @param array<string, string> $assoc
      */
@@ -59,6 +65,38 @@ final class QueueCommand
         }
         $worker->run();
         $this->halt($worker->exitCode());
+    }
+
+    /**
+     * One-shot: run due schedules, process a bounded set of jobs, light reconcile, exit.
+     *
+     * @param array<int, string> $args
+     * @param array<string, string> $assoc
+     */
+    public function tick(array $args, array $assoc): void
+    {
+        unset($args);
+        $runtime = Coordinator::get();
+        $token = \Fuzeo\Queue\Support\Ulid::generate();
+        $lock = $runtime->execution()->lock();
+        if (!$lock->acquire(\Fuzeo\Queue\Execution\ExecutionRuntime::RUNNER_LOCK, $token, 70)) {
+            $this->line('skipped=runner_lock_held');
+            return;
+        }
+        try {
+            $n = $runtime->scheduler()->runDue();
+            $options = WorkerOptions::fromCli(
+                array_merge(['once' => true, 'sleep' => '0'], $assoc),
+                $runtime->config()->defaultQueue,
+                $runtime->config()
+            );
+            $worker = WorkerLoop::fromManager($runtime, $options);
+            $worker->run();
+            $reconciled = $runtime->orchestrator()->reconcile(10);
+            $this->line('schedules=' . $n . ' jobs=' . $worker->processed() . ' reconciled=' . $reconciled);
+        } finally {
+            $lock->release(\Fuzeo\Queue\Execution\ExecutionRuntime::RUNNER_LOCK, $token);
+        }
     }
 
     /**

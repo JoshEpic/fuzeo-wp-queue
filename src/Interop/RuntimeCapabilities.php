@@ -19,6 +19,8 @@ final class RuntimeCapabilities
         public readonly bool $persistentWorkers = false,
         public readonly bool $cancellation = false,
         public readonly bool $visibility = false,
+        public readonly bool $longRunningJobs = false,
+        public readonly string $executionMode = 'none',
     ) {
     }
 
@@ -37,12 +39,28 @@ final class RuntimeCapabilities
             'persistent_workers', 'workers' => $this->persistentWorkers,
             'cancellation' => $this->cancellation,
             'visibility' => $this->visibility,
+            'long_running_jobs', 'long_running' => $this->longRunningJobs,
             default => false,
         };
     }
 
+    public function supportsPersistentWorkers(): bool
+    {
+        return $this->persistentWorkers;
+    }
+
+    public function supportsLongRunningJobs(): bool
+    {
+        return $this->longRunningJobs;
+    }
+
+    public function executionMode(): string
+    {
+        return $this->executionMode;
+    }
+
     /**
-     * @return array<string, bool>
+     * @return array<string, bool|string>
      */
     public function toArray(): array
     {
@@ -59,6 +77,8 @@ final class RuntimeCapabilities
             'persistent_workers' => $this->persistentWorkers,
             'cancellation' => $this->cancellation,
             'visibility' => $this->visibility,
+            'long_running_jobs' => $this->longRunningJobs,
+            'execution_mode' => $this->executionMode,
         ];
     }
 }

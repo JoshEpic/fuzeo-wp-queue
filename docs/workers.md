@@ -5,7 +5,11 @@ Workers are independent PHP CLI processes. They boot WordPress once, then loop.
 ```bash
 wp fuzeo-queue work
 wp fuzeo-queue work --queue=high,default --sleep=1 --timeout=60 --lease=90 --memory=128M --max-jobs=500 --max-runtime=3600
+wp fuzeo-queue work --once --max-jobs=25 --max-runtime=50 --sleep=0
+wp fuzeo-queue tick
 ```
+
+`--once` marks a one-shot CLI worker (`process_type=cron_cli`) for external cron. See [external-cron.md](external-cron.md).
 
 | Option | Meaning |
 | --- | --- |

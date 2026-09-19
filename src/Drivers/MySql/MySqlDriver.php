@@ -151,8 +151,9 @@ final class MySqlDriver implements QueueDriver, FailureStore, ReliableAcknowledg
             $this->connection->execute(
                 'INSERT INTO ' . $this->jobs() . ' (
                     job_id, envelope_version, job_type, job_schema_version, queue, priority, state, envelope,
-                    available_at, attempt, network_id, site_id, scope, origin_package, origin_version, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                    available_at, attempt, network_id, site_id, scope, origin_package, origin_version, created_at, updated_at,
+                    execution_class, timeout_seconds
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
                 [
                     $envelope->jobId,
                     $envelope->envelopeVersion,
@@ -171,6 +172,8 @@ final class MySqlDriver implements QueueDriver, FailureStore, ReliableAcknowledg
                     $envelope->origin->version,
                     $this->date($envelope->createdAt),
                     $this->date(Dates::fromAtom($now)),
+                    $envelope->executionClass()->value,
+                    $envelope->timeoutSeconds,
                 ]
             );
             $this->connection->commit();
@@ -204,7 +207,7 @@ final class MySqlDriver implements QueueDriver, FailureStore, ReliableAcknowledg
 
         $this->connection->begin();
         try {
-            $row = $this->lockNextReservableRow($request->queue, $now);
+            $row = $this->lockNextReservableRow($request, $now);
 
             if ($row === null) {
                 $this->connection->commit();
@@ -872,26 +875,32 @@ final class MySqlDriver implements QueueDriver, FailureStore, ReliableAcknowledg
      *
      * @return array<string, mixed>|null
      */
-    private function lockNextReservableRow(string $queue, \DateTimeImmutable $now): ?array
+    private function lockNextReservableRow(ReserveRequest $request, \DateTimeImmutable $now): ?array
     {
         $nowDate = $this->date($now);
-        $candidates = $this->connection->select(
-            'SELECT `job_id` FROM ' . $this->jobs() . '
+        $sql = 'SELECT `job_id` FROM ' . $this->jobs() . '
              WHERE `queue` = ?
                AND (
                     (`state` = ? AND `available_at` <= ?)
                  OR (`state` = ? AND `lease_expires_at` IS NOT NULL AND `lease_expires_at` <= ?)
-               )
-             ORDER BY `priority` DESC, `available_at` ASC, `job_id` ASC
-             LIMIT 32',
-            [
-                $queue,
-                JobState::Pending->value,
-                $nowDate,
-                JobState::Reserved->value,
-                $nowDate,
-            ]
-        );
+               )';
+        $params = [
+            $request->queue,
+            JobState::Pending->value,
+            $nowDate,
+            JobState::Reserved->value,
+            $nowDate,
+        ];
+        if ($request->executionClass !== null) {
+            $sql .= ' AND `execution_class` = ?';
+            $params[] = $request->executionClass;
+        }
+        if ($request->maxTimeoutSeconds !== null) {
+            $sql .= ' AND `timeout_seconds` <= ?';
+            $params[] = $request->maxTimeoutSeconds;
+        }
+        $sql .= ' ORDER BY `priority` DESC, `available_at` ASC, `job_id` ASC LIMIT 32';
+        $candidates = $this->connection->select($sql, $params);
 
         foreach ($candidates as $candidate) {
             $jobId = (string) ($candidate['job_id'] ?? '');
@@ -903,7 +912,21 @@ final class MySqlDriver implements QueueDriver, FailureStore, ReliableAcknowledg
                 'SELECT * FROM ' . $this->jobs() . ' WHERE `job_id` = ? FOR UPDATE SKIP LOCKED',
                 [$jobId]
             );
-            if ($row === null || !$this->rowIsReservable($row, $queue, $nowDate)) {
+            if ($row === null || !$this->rowIsReservable($row, $request->queue, $nowDate)) {
+                $this->connection->execute('ROLLBACK TO SAVEPOINT fuzeo_reserve');
+                continue;
+            }
+            if (
+                $request->executionClass !== null
+                && (string) ($row['execution_class'] ?? 'standard') !== $request->executionClass
+            ) {
+                $this->connection->execute('ROLLBACK TO SAVEPOINT fuzeo_reserve');
+                continue;
+            }
+            if (
+                $request->maxTimeoutSeconds !== null
+                && (int) ($row['timeout_seconds'] ?? 60) > $request->maxTimeoutSeconds
+            ) {
                 $this->connection->execute('ROLLBACK TO SAVEPOINT fuzeo_reserve');
                 continue;
             }

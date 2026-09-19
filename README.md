@@ -5,16 +5,18 @@ Real background job infrastructure for WordPress plugin developers.
 Durable queues, persistent workers, retries, scheduling, concurrency, observability, and more.
 
 ```bash
-composer require fuzeowp/queue:^1.1
+composer require fuzeowp/queue:^1.2
 ```
 
-Fuzeo Queue is a Composer library. It is not a WordPress plugin. It does not globally replace WP-Cron or Action Scheduler; 1.1 can interoperate with both through explicit adapters and descriptors.
+Fuzeo Queue is a Composer library. It is not a WordPress plugin. It does not globally replace WP-Cron or Action Scheduler; 1.1+ can interoperate with both through explicit adapters and descriptors.
+
+Persistent CLI workers are recommended. Bounded external-cron and WordPress compatibility execution modes are available for constrained hosting.
 
 Delivery is **at-least-once**. A worker may crash after a side effect and before acknowledgement; another worker will run the job after the lease expires. Design handlers accordingly.
 
 ## Requirements
 
-| Surface | 1.1 support |
+| Surface | 1.2 support |
 | --- | --- |
 | PHP | 8.1, 8.2, 8.3, 8.4 |
 | WordPress | 6.2+ (optional until you boot a runtime) |
@@ -88,11 +90,13 @@ Queue::assertDispatched(ProcessOrder::class);
 - Deployment generations, drain, restart, schema migrations
 - Multisite isolation and WooCommerce/HPOS-safe ID-over-object jobs
 - Action Scheduler / WP-Cron discovery, explicit migrations, Queue-first fallback runtime
+- Bounded external-cron and WordPress compatibility execution for constrained hosting
 
-## What 1.1 is not
+## What 1.2 is not
 
 - Exactly-once delivery
 - A silent WP-Cron or Action Scheduler replacement or interceptor
+- Equivalence between WP-Cron ticks and a persistent worker fleet
 - Redis Cluster
 - A workflow engine, webhook product, or hosting control plane
 - A commercial Fuzeo licensing component
@@ -110,6 +114,9 @@ Pick **one** production backend. Switching drivers does not migrate jobs.
 - [Quickstart](docs/quickstart.md)
 - [WordPress plugin guide](docs/plugin-guide.md)
 - [Job authoring](docs/job-authoring.md)
+- [Execution modes](docs/execution-modes.md)
+- [External cron](docs/external-cron.md)
+- [Compatibility executor](docs/compatibility-executor.md)
 - [Interoperability](docs/interoperability.md)
 - [Bundling](docs/bundling.md)
 - [SemVer](docs/versioning.md)

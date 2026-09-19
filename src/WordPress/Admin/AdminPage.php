@@ -36,6 +36,7 @@ final class AdminPage
             'orchestration' => self::orchestration($operator),
             'metrics' => self::metrics($operator),
             'diagnostics' => self::diagnostics($operator),
+            'execution' => self::execution($operator),
             'interop' => self::interop($operator),
             default => self::overview($operator),
         };
@@ -54,6 +55,7 @@ final class AdminPage
             'orchestration' => 'Chains & Batches',
             'metrics' => 'Metrics',
             'diagnostics' => 'Diagnostics',
+            'execution' => 'Execution',
             'interop' => 'Interoperability',
         ];
         echo '<nav class="fuzeo-queue-nav" aria-label="Fuzeo Queue">';
@@ -78,7 +80,10 @@ final class AdminPage
             echo '<div class="notice notice-info"><p>Queue is installed. No jobs have been dispatched yet.</p></div>';
         }
         if (!empty($data['no_workers'])) {
-            echo '<div class="notice notice-warning"><p>Jobs are waiting, but no active Fuzeo Queue worker is detected. Run <code>wp fuzeo-queue work</code>.</p></div>';
+            echo '<div class="notice notice-warning"><p><strong>No persistent workers detected.</strong></p>';
+            echo '<ul><li>Recommended: configure a persistent worker (<code>wp fuzeo-queue work</code> under Supervisor/systemd).</li>';
+            echo '<li>Alternative: use external cron (<code>wp fuzeo-queue work --once</code>).</li>';
+            echo '<li>Compatibility: enable the bounded WordPress executor for eligible jobs (not full worker mode).</li></ul></div>';
         }
         $health = is_array($data['health'] ?? null) ? $data['health'] : [];
         echo '<section aria-labelledby="fq-health"><h2 id="fq-health">Queue health</h2>';
@@ -197,13 +202,14 @@ final class AdminPage
     {
         $rows = Coordinator::get()->operations()->workers($operator);
         echo '<table class="widefat striped"><caption>Workers</caption><thead><tr>';
-        echo '<th scope="col">ID</th><th scope="col">Host</th><th scope="col">PID</th><th scope="col">Status</th><th scope="col">Version</th><th scope="col">Generation</th><th scope="col">Heartbeat age</th><th scope="col">Memory</th><th scope="col">Processed</th>';
+        echo '<th scope="col">ID</th><th scope="col">Type</th><th scope="col">Host</th><th scope="col">PID</th><th scope="col">Status</th><th scope="col">Version</th><th scope="col">Generation</th><th scope="col">Heartbeat age</th><th scope="col">Memory</th><th scope="col">Processed</th>';
         echo '</tr></thead><tbody>';
         if ($rows === []) {
             echo '<tr><td colspan="9">No workers have registered. Start <code>wp fuzeo-queue work</code>.</td></tr>';
         }
         foreach ($rows as $row) {
             echo '<tr><td><code>' . esc_html((string) $row['worker_id']) . '</code></td>';
+            echo '<td>' . esc_html((string) ($row['process_type'] ?? 'persistent')) . '</td>';
             echo '<td>' . esc_html((string) $row['hostname']) . '</td>';
             echo '<td>' . esc_html((string) $row['pid']) . '</td>';
             echo '<td>' . esc_html((string) $row['health']) . '</td>';
@@ -317,6 +323,44 @@ final class AdminPage
             echo '<tr><th scope="row">' . esc_html((string) $key) . '</th><td>' . esc_html(is_bool($value) ? ($value ? 'true' : 'false') : (string) $value) . '</td></tr>';
         }
         echo '</tbody></table>';
+    }
+
+    private static function execution(Operator $operator): void
+    {
+        unset($operator);
+        $snap = Coordinator::get()->execution()->snapshot();
+        echo '<section><h2>Current execution mode</h2>';
+        echo '<p><strong>' . esc_html((string) $snap['mode_label']) . '</strong> (<code>' . esc_html((string) $snap['mode']) . '</code>)</p>';
+        if (($snap['mode'] ?? '') === 'wordpress_compat') {
+            echo '<p>Jobs are processed in bounded WordPress executions because no persistent worker is active. Throughput, latency, scheduling precision, and long-running job support are reduced.</p>';
+            echo '<p>This is not full worker mode.</p>';
+        }
+        echo '<p>' . esc_html((string) $snap['recommended_upgrade']) . '</p>';
+        if ((string) ($snap['trigger_warning'] ?? '') !== '') {
+            echo '<div class="notice notice-warning"><p>Compatibility mode is ' . esc_html((string) $snap['trigger_warning']) . '. DISABLE_WP_CRON is set and no persistent/external-cron executor is active.</p></div>';
+        }
+        echo '<h3>Capability limitations</h3><ul>';
+        foreach ((array) ($snap['limitations'] ?? []) as $line) {
+            echo '<li>' . esc_html((string) $line) . '</li>';
+        }
+        echo '</ul>';
+        $state = is_array($snap['state'] ?? null) ? $snap['state'] : [];
+        echo '<h3>Last activity</h3><p>Last tick: ' . esc_html((string) ($state['last_tick_at'] ?? 'never'));
+        echo ' · Last success: ' . esc_html((string) ($state['last_success_at'] ?? 'never'));
+        echo ' · Jobs last tick: ' . esc_html((string) ($state['last_jobs_processed'] ?? '0')) . '</p>';
+        echo '<h3>Settings</h3><ul>';
+        echo '<li>Enabled: ' . (!empty($snap['compatibility_enabled']) ? 'yes' : 'no') . '</li>';
+        echo '<li>Max runtime: ' . esc_html((string) $snap['max_runtime']) . 's</li>';
+        echo '<li>Max jobs: ' . esc_html((string) $snap['max_jobs']) . '</li>';
+        echo '<li>Allowed queues: ' . esc_html(implode(', ', (array) ($snap['allowed_queues'] ?? []))) . '</li>';
+        echo '</ul>';
+        echo '<p>Fuzeo Compatibility Mode uses Fuzeo Queue storage, retries, and visibility. Action Scheduler is a separate fallback runtime used only by consumer plugins that support it. Queue jobs are never moved to Action Scheduler because workers are down.</p>';
+        echo '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '">';
+        echo '<input type="hidden" name="action" value="fuzeo_queue_compat_toggle" />';
+        wp_nonce_field('fuzeo_queue_compat_toggle');
+        echo '<input type="hidden" name="enable" value="' . (empty($snap['compatibility_enabled']) ? '1' : '0') . '" />';
+        echo '<button class="button">' . (empty($snap['compatibility_enabled']) ? 'Enable WordPress Compatibility Mode' : 'Disable compatibility mode') . '</button>';
+        echo '</form></section>';
     }
 
     private static function interop(Operator $operator): void
@@ -469,6 +513,22 @@ final class AdminPage
             Coordinator::get()->interop()->rollback($id);
         }
         wp_safe_redirect(wp_get_referer() ?: admin_url('admin.php?page=' . AdminRegistrar::MENU_SLUG . '&fq_view=interop'));
+        exit;
+    }
+
+    public static function handleCompatToggle(): void
+    {
+        check_admin_referer('fuzeo_queue_compat_toggle');
+        $enable = isset($_POST['enable']) && (string) $_POST['enable'] === '1';
+        $exec = Coordinator::get()->execution();
+        if ($enable) {
+            $exec->enable();
+            Coordinator::get()->operations()->recordEvent('compat.enabled', 'execution', 'compat');
+        } else {
+            $exec->disable();
+            Coordinator::get()->operations()->recordEvent('compat.disabled', 'execution', 'compat');
+        }
+        wp_safe_redirect(wp_get_referer() ?: admin_url('admin.php?page=' . AdminRegistrar::MENU_SLUG . '&fq_view=execution'));
         exit;
     }
 

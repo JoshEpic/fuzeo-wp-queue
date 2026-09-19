@@ -8,3 +8,4 @@
 - **Cancellation** is cooperative. Check `JobContext` when doing long work.
 - **Tags / metadata** are operator hints with size limits (default 16 tags, 8 KiB metadata).
 - **Site context** is captured at dispatch. Network jobs need network-scoped handlers available on the worker.
+- **Persistent-only jobs** implement `RequiresPersistentWorker` or `Queue::on($q)->requiresPersistentWorker()`. Compatibility mode skips them; they stay pending.

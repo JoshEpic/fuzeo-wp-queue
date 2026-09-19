@@ -113,6 +113,7 @@ final class WorkerLoop
             $runtimeGeneration->current(),
             $bootGeneration,
             $watch->bootRestartGeneration(),
+            $options->processType,
         );
         $workers = $driver instanceof ProvidesWorkerStore ? $driver->workerStore() : null;
         $connection = $driver instanceof \Fuzeo\Queue\Drivers\MySql\MySqlDriver ? $driver->connection() : null;
@@ -208,6 +209,12 @@ final class WorkerLoop
             return;
         }
         $this->workers?->register($this->identity, $this->options->queues);
+        if ($this->options->processType === \Fuzeo\Queue\Execution\ProcessType::CronCli) {
+            try {
+                $this->operations?->recordCronWorker();
+            } catch (\Throwable) {
+            }
+        }
         $this->installFatalGuard();
         Hooks::emit(Hooks::WORKER_STARTED, $this->identity);
         $this->operations?->recordEvent('worker.started', 'worker', $this->identity->workerId);
@@ -283,7 +290,14 @@ final class WorkerLoop
             ) {
                 $block = $this->options->sleepSeconds;
             }
-            $reserved = $this->driver->reserve(new ReserveRequest($queue, $this->identity->workerId, $lease, $block));
+            $reserved = $this->driver->reserve(new ReserveRequest(
+                $queue,
+                $this->identity->workerId,
+                $lease,
+                $block,
+                $this->options->executionClass,
+                $this->options->maxTimeoutSeconds,
+            ));
             if ($reserved !== null) {
                 return $reserved;
             }

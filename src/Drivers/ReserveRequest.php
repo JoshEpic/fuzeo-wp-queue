@@ -13,6 +13,8 @@ final class ReserveRequest
         public readonly string $workerId,
         public readonly int $leaseSeconds = 60,
         public readonly int $blockSeconds = 0,
+        public readonly ?string $executionClass = null,
+        public readonly ?int $maxTimeoutSeconds = null,
     ) {
         QueueName::assertValid($this->queue);
         if ($this->workerId === '') {
@@ -23,6 +25,15 @@ final class ReserveRequest
         }
         if ($this->blockSeconds < 0) {
             throw new \Fuzeo\Queue\Exceptions\QueueException('block_seconds cannot be negative.');
+        }
+        if (
+            $this->executionClass !== null
+            && !in_array($this->executionClass, ['standard', 'persistent'], true)
+        ) {
+            throw new \Fuzeo\Queue\Exceptions\QueueException('execution_class filter must be standard or persistent.');
+        }
+        if ($this->maxTimeoutSeconds !== null && $this->maxTimeoutSeconds < 1) {
+            throw new \Fuzeo\Queue\Exceptions\QueueException('max_timeout_seconds must be positive when set.');
         }
     }
 }

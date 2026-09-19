@@ -69,6 +69,7 @@ final class AdminRegistrar
         add_action('admin_post_fuzeo_queue_drain', [AdminPage::class, 'handleDrain']);
         add_action('admin_post_fuzeo_queue_interop_migrate', [AdminPage::class, 'handleInteropMigrate']);
         add_action('admin_post_fuzeo_queue_interop_rollback', [AdminPage::class, 'handleInteropRollback']);
+        add_action('admin_post_fuzeo_queue_compat_toggle', [AdminPage::class, 'handleCompatToggle']);
     }
 
     public static function registrationCount(): int

@@ -10,4 +10,4 @@ Frozen for 1.0. Breaking changes require `/v2`.
 - Payloads omitted unless explicitly requested and the operator may view payloads. Secrets redacted.
 - Redis job `total` may set `total_is_approximate: true`.
 
-Resources: `/overview`, `/queues`, `/jobs`, `/jobs/{id}`, retry/cancel, `/workers`, `/schedules`, `/chains`, `/batches`, `/metrics`, `/diagnostics`, `/health`, `/ready`, `/operations/*`, `/reconcile`, `/interop/*`.
+Resources: `/overview`, `/queues`, `/jobs`, `/jobs/{id}`, retry/cancel, `/workers`, `/schedules`, `/chains`, `/batches`, `/metrics`, `/diagnostics`, `/health`, `/ready`, `/operations/*`, `/reconcile`, `/interop/*`, `/compat/status`, `/compat/run`, `/compat/settings`.

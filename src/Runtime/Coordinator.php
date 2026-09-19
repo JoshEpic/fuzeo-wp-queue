@@ -34,6 +34,7 @@ use Fuzeo\Queue\Persistence\Phase5TablesMigration;
 use Fuzeo\Queue\Persistence\Phase6TablesMigration;
 use Fuzeo\Queue\Persistence\Phase8TablesMigration;
 use Fuzeo\Queue\Persistence\Phase11InteropMigration;
+use Fuzeo\Queue\Persistence\Phase12ExecutionMigration;
 use Fuzeo\Queue\Persistence\InteropSchema;
 use Fuzeo\Queue\Persistence\QueueTablesMigration;
 use Fuzeo\Queue\Persistence\WpdbConnection;
@@ -428,6 +429,7 @@ final class Coordinator
         AdminRegistrar::register();
         \Fuzeo\Queue\WordPress\Rest\RestRegistrar::register();
         \Fuzeo\Queue\Interop\FallbackCallback::register();
+        \Fuzeo\Queue\Execution\CompatTrigger::register();
     }
 
     /**
@@ -444,6 +446,7 @@ final class Coordinator
             $migrations[] = new Phase6TablesMigration($connection);
             $migrations[] = new Phase8TablesMigration($connection);
             $migrations[] = new Phase11InteropMigration($connection);
+            $migrations[] = new Phase12ExecutionMigration($connection);
         }
 
         return $migrations;

@@ -68,7 +68,7 @@ abstract class MysqlTestCase extends TestCase
 
     protected function dropTables(): void
     {
-        foreach (['fuzeo_queue_jobs', 'fuzeo_queue_workers', 'fuzeo_queue_attempts', 'fuzeo_queue_meta', 'fuzeo_queue_unique', 'fuzeo_queue_idempotency', 'fuzeo_queue_schedules', 'fuzeo_queue_schedule_claims', 'fuzeo_queue_schedulers', 'fuzeo_queue_chains', 'fuzeo_queue_chain_steps', 'fuzeo_queue_batches', 'fuzeo_queue_batch_members', 'fuzeo_queue_metrics', 'fuzeo_queue_audit'] as $table) {
+        foreach (['fuzeo_queue_jobs', 'fuzeo_queue_workers', 'fuzeo_queue_attempts', 'fuzeo_queue_meta', 'fuzeo_queue_unique', 'fuzeo_queue_idempotency', 'fuzeo_queue_schedules', 'fuzeo_queue_schedule_claims', 'fuzeo_queue_schedulers', 'fuzeo_queue_chains', 'fuzeo_queue_chain_steps', 'fuzeo_queue_batches', 'fuzeo_queue_batch_members', 'fuzeo_queue_metrics', 'fuzeo_queue_audit', 'fuzeo_queue_migrations'] as $table) {
             try {
                 $this->connection->execute('DROP TABLE IF EXISTS `' . $this->connection->prefix() . $table . '`');
             } catch (\Throwable) {

@@ -20,7 +20,7 @@ final class Phase11SchemaTest extends MysqlTestCase
     {
         $upgraded = Coordinator::bootForTesting(['driver' => 'mysql'], connection: $this->connection);
         self::assertSame(SchemaOwner::CURRENT_VERSION, $upgraded->migrations()->currentVersion());
-        self::assertSame(7, SchemaOwner::CURRENT_VERSION);
+        self::assertSame(8, SchemaOwner::CURRENT_VERSION);
         $row = $this->connection->selectOne(
             'SELECT 1 AS ok FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?',
             [$this->connection->prefix() . Schema::MIGRATIONS]

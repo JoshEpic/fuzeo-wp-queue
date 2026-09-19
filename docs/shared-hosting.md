@@ -1,11 +1,12 @@
 # Shared hosting
 
-Persistent CLI workers are the production model. Fuzeo Queue 1.0 does not pretend every shared host is a suitable worker fleet.
+Persistent CLI workers are the production model. Fuzeo Queue does not pretend every shared host is a suitable worker fleet.
 
-If you only have WP-Cron:
+Decision tree:
 
-- You may dispatch jobs into MySQL storage.
-- You do **not** have the primary execution architecture.
-- Degraded/cron-driven execution and Action Scheduler interoperability are **not** 1.0 features.
+1. Can the host run a persistent CLI process? → Supervisor/systemd/`wp fuzeo-queue work`.
+2. No persistent process, but scheduled CLI (cPanel, Plesk, crontab)? → `wp fuzeo-queue work --once` and `schedule-run`. See [external-cron.md](external-cron.md).
+3. No CLI cron? Enable the bounded WordPress compatibility executor **if** the workload is light. See [compatibility-executor.md](compatibility-executor.md).
+4. Consumer plugin supports Action Scheduler fallback and Queue is not available or the workload policy requires it → AS for **new** dispatches only.
 
-Do not lower lease/timeout/durability defaults to paper over hosting limits. Use a VPS, container, or host that allows Supervisor/systemd and a long-running `wp fuzeo-queue work`.
+Limitations in compatibility mode: low throughput, coarse schedule timing, no long-running imports, typically one runner, rate limits are approximate. Do not lower lease/timeout/durability defaults to paper over hosting limits.

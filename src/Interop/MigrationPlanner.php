@@ -153,6 +153,9 @@ final class MigrationPlanner
 
     public function classifyCron(CronEvent $event, ?MigrationRecord $history): Compatibility
     {
+        if (\Fuzeo\Queue\Execution\CompatTrigger::isInternalHook($event->hook)) {
+            return Compatibility::NotEligible;
+        }
         if ($history !== null && in_array($history->status, [MigrationStatus::Completed, MigrationStatus::RollbackAvailable], true)) {
             return Compatibility::AlreadyMigrated;
         }

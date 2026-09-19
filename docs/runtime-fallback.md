@@ -7,11 +7,14 @@ $async = Interop::runtime($origin); // fuzeo_queue | action_scheduler | throws/u
 $async->name();
 $async->healthy();
 $async->supports('batch');
+$async->capabilities()->executionMode(); // persistent | cron_cli | wordpress_compat | none
+$async->capabilities()->supportsPersistentWorkers();
+$async->capabilities()->supportsLongRunningJobs();
 $async->dispatch(new ProcessOrder($id));
 ```
 
 `require_queue` fails if Queue is not healthy. Fallback does not implement chains, batches, idempotency, or persistent workers.
 
-If Queue is installed later, **new** `dispatch` calls use Queue; existing AS actions stay on AS until they drain. A job already accepted by Queue is never copied to AS during an outage.
+If Queue is installed later, **new** `dispatch` calls use Queue; existing AS actions stay on AS until they drain. A job already accepted by Queue is never copied to AS during an outage. Compatibility mode may still process it.
 
 Tests: `Interop::fake()` / `FakeAsyncRuntime`.

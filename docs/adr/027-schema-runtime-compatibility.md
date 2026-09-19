@@ -6,7 +6,7 @@ Schema v3 adds `fuzeo_queue_attempts`. A 0.2 worker may still be running when 0.
 
 ## Decision
 
-`SchemaOwner::CURRENT_VERSION = 7`. Boot runs migrations through 7. `MySqlDriver::reserve` and `SchedulerLoop` refuse unless the stored schema version **equals** 7. Operators **must recycle workers and schedulers** after upgrading (`wp fuzeo-queue restart` / drain-then-migrate). Compatibility series remains `1`. Lua scripts remain version 4.
+`SchemaOwner::CURRENT_VERSION = 8`. Boot runs migrations through 8. `MySqlDriver::reserve` and `SchedulerLoop` refuse unless the stored schema version **equals** 8. Operators **must recycle workers and schedulers** after upgrading (`wp fuzeo-queue restart` / drain-then-migrate). Compatibility series remains `1`. Lua scripts are version 5.
 
 Phase 9 adds deployment generations, restart/drain tokens, and a compatibility evaluator. Exact schema is not loosened.
 

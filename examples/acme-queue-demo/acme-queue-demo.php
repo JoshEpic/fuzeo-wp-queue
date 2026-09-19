@@ -15,12 +15,18 @@ if (is_file($autoload)) {
 
 require_once __DIR__ . '/src/ProcessOrder.php';
 require_once __DIR__ . '/src/ProcessOrderHandler.php';
+require_once __DIR__ . '/src/ImportCatalog.php';
 
 add_action('fuzeo_queue_ready', static function ($runtime): void {
     $origin = new Fuzeo\Queue\Jobs\Origin('acme/queue-demo', '1.0.0');
     $runtime->consumers()->register($origin);
     $runtime->jobs()->registerJob(
         Acme\QueueDemo\ProcessOrder::class,
+        $origin,
+        Acme\QueueDemo\ProcessOrderHandler::class
+    );
+    $runtime->jobs()->registerJob(
+        Acme\QueueDemo\ImportCatalog::class,
         $origin,
         Acme\QueueDemo\ProcessOrderHandler::class
     );

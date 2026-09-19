@@ -19,6 +19,7 @@ final class WorkerIdentity
         public readonly string $deploymentGeneration = '',
         public readonly string $restartGeneration = '',
         public readonly int $schemaVersion = \Fuzeo\Queue\Persistence\SchemaOwner::CURRENT_VERSION,
+        public readonly \Fuzeo\Queue\Execution\ProcessType $processType = \Fuzeo\Queue\Execution\ProcessType::Persistent,
     ) {
     }
 
@@ -27,6 +28,7 @@ final class WorkerIdentity
         string $runtimeGeneration = '',
         string $deploymentGeneration = '',
         string $restartGeneration = '',
+        \Fuzeo\Queue\Execution\ProcessType $processType = \Fuzeo\Queue\Execution\ProcessType::Persistent,
     ): self {
         $host = gethostname();
         $pid = getmypid();
@@ -40,6 +42,8 @@ final class WorkerIdentity
             $runtimeGeneration,
             $deploymentGeneration !== '' ? $deploymentGeneration : $runtimeGeneration,
             $restartGeneration,
+            \Fuzeo\Queue\Persistence\SchemaOwner::CURRENT_VERSION,
+            $processType,
         );
     }
 }

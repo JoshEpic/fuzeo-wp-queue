@@ -40,12 +40,19 @@ final class FuzeoQueueRuntime implements AsyncRuntime
     public function capabilities(): RuntimeCapabilities
     {
         $caps = $this->manager->driver()->capabilities();
+        $mode = 'none';
+        try {
+            $mode = $this->manager->execution()->mode()->value;
+        } catch (\Throwable) {
+        }
 
-        return self::fromDriver($caps);
+        return self::fromDriver($caps, $mode);
     }
 
-    public static function fromDriver(DriverCapabilities $caps): RuntimeCapabilities
+    public static function fromDriver(DriverCapabilities $caps, string $executionMode = 'none'): RuntimeCapabilities
     {
+        $persistent = $executionMode === \Fuzeo\Queue\Execution\ExecutionMode::Persistent->value;
+
         return new RuntimeCapabilities(
             dispatch: true,
             delay: $caps->delayedJobs,
@@ -59,6 +66,8 @@ final class FuzeoQueueRuntime implements AsyncRuntime
             persistentWorkers: $caps->durable,
             cancellation: $caps->cancellation,
             visibility: true,
+            longRunningJobs: $persistent,
+            executionMode: $executionMode,
         );
     }
 

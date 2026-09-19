@@ -134,6 +134,22 @@ final class PendingDispatch
         return $clone;
     }
 
+    public function withTimeout(int $seconds): self
+    {
+        $clone = clone $this;
+        $clone->options = $this->options->withTimeout($seconds);
+
+        return $clone;
+    }
+
+    public function requiresPersistentWorker(): self
+    {
+        $clone = clone $this;
+        $clone->options = $this->options->requiresPersistentWorker();
+
+        return $clone;
+    }
+
     public function dispatch(?Job $job = null): Envelope
     {
         return $this->dispatchResult($job)->envelope;

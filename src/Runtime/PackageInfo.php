@@ -6,7 +6,7 @@ namespace Fuzeo\Queue\Runtime;
 
 final class PackageInfo
 {
-    public const VERSION = '1.1.0';
+    public const VERSION = '1.2.0';
 
     /**
      * Runtime coexistence epoch for bundled copies. Independent of Composer SemVer.

@@ -63,6 +63,16 @@ final class Config
         public readonly int $maxTagLength = 64,
         public readonly int $maxMetadataBytes = 8192,
         public readonly int $maxMetadataKeyLength = 64,
+        public readonly bool $compatibilityEnabled = false,
+        public readonly int $compatibilityMaxRuntime = 18,
+        public readonly int $compatibilityMaxJobs = 5,
+        /** @var list<string> */
+        public readonly array $compatibilityAllowedQueues = [],
+        public readonly int $compatibilityStaleWorkerGrace = 90,
+        public readonly int $compatibilityMaxJobTimeout = 60,
+        /** @var list<string> */
+        public readonly array $persistentQueues = [],
+        public readonly string $executionModeOverride = '',
     ) {
     }
 
@@ -121,6 +131,14 @@ final class Config
             maxTagLength: $this->int($values, 'max_tag_length', $this->maxTagLength),
             maxMetadataBytes: $this->int($values, 'max_metadata_bytes', $this->maxMetadataBytes),
             maxMetadataKeyLength: $this->int($values, 'max_metadata_key_length', $this->maxMetadataKeyLength),
+            compatibilityEnabled: $this->bool($values, 'compatibility_enabled', $this->compatibilityEnabled),
+            compatibilityMaxRuntime: $this->int($values, 'compatibility_max_runtime', $this->compatibilityMaxRuntime),
+            compatibilityMaxJobs: $this->int($values, 'compatibility_max_jobs', $this->compatibilityMaxJobs),
+            compatibilityAllowedQueues: $this->stringList($values, 'compatibility_allowed_queues', $this->compatibilityAllowedQueues),
+            compatibilityStaleWorkerGrace: $this->int($values, 'compatibility_stale_worker_grace', $this->compatibilityStaleWorkerGrace),
+            compatibilityMaxJobTimeout: $this->int($values, 'compatibility_max_job_timeout', $this->compatibilityMaxJobTimeout),
+            persistentQueues: $this->stringList($values, 'persistent_queues', $this->persistentQueues),
+            executionModeOverride: $this->stringAllowEmpty($values, 'execution_mode', $this->executionModeOverride),
         );
     }
 
@@ -251,5 +269,41 @@ final class Config
         }
 
         return $out;
+    }
+
+    /**
+     * @param array<string, mixed> $values
+     * @param list<string> $default
+     * @return list<string>
+     */
+    private function stringList(array $values, string $key, array $default): array
+    {
+        if (!array_key_exists($key, $values) || $values[$key] === null) {
+            return $default;
+        }
+        $raw = $values[$key];
+        if (is_string($raw)) {
+            if ($raw === '') {
+                return [];
+            }
+            $decoded = json_decode($raw, true);
+            if (is_array($decoded)) {
+                $raw = $decoded;
+            } else {
+                $raw = array_map('trim', explode(',', $raw));
+            }
+        }
+        if (!is_array($raw)) {
+            throw new \Fuzeo\Queue\Exceptions\ConfigurationException('Config key ' . $key . ' must be a list of queue names.');
+        }
+        $out = [];
+        foreach ($raw as $item) {
+            if (!is_string($item) || $item === '') {
+                throw new \Fuzeo\Queue\Exceptions\ConfigurationException('Config key ' . $key . ' must contain non-empty strings.');
+            }
+            $out[] = $item;
+        }
+
+        return array_values($out);
     }
 }

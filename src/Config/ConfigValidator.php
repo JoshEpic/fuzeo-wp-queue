@@ -132,6 +132,33 @@ final class ConfigValidator
                 'deployment_id may contain only letters, numbers, dots, underscores, colons, and hyphens.'
             );
         }
+        if ($config->compatibilityMaxRuntime < 5 || $config->compatibilityMaxRuntime > 25) {
+            throw new ConfigurationException('compatibility_max_runtime must be between 5 and 25 seconds.');
+        }
+        if ($config->compatibilityMaxJobs < 1 || $config->compatibilityMaxJobs > 25) {
+            throw new ConfigurationException('compatibility_max_jobs must be between 1 and 25.');
+        }
+        self::positive('compatibility_stale_worker_grace', $config->compatibilityStaleWorkerGrace);
+        self::positive('compatibility_max_job_timeout', $config->compatibilityMaxJobTimeout);
+        if ($config->compatibilityStaleWorkerGrace < $config->staleWorkerSeconds) {
+            throw new ConfigurationException(
+                'compatibility_stale_worker_grace must be >= stale_worker_threshold so compatibility mode does not flap.'
+            );
+        }
+        foreach ($config->compatibilityAllowedQueues as $queue) {
+            QueueName::assertValid($queue);
+        }
+        foreach ($config->persistentQueues as $queue) {
+            QueueName::assertValid($queue);
+        }
+        if (
+            $config->executionModeOverride !== ''
+            && \Fuzeo\Queue\Execution\ExecutionMode::tryFrom($config->executionModeOverride) === null
+        ) {
+            throw new ConfigurationException(
+                'execution_mode must be persistent, cron_cli, wordpress_compat, none, or empty.'
+            );
+        }
     }
 
     private static function positive(string $key, int $value): void
