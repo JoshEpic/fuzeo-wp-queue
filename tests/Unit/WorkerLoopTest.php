@@ -4,11 +4,14 @@ declare(strict_types=1);
 
 namespace Fuzeo\Queue\Tests\Unit;
 
+use Fuzeo\Queue\Drivers\DriverCapabilities;
 use Fuzeo\Queue\Drivers\Memory\MemoryDriver;
+use Fuzeo\Queue\Drivers\QueueDriver;
 use Fuzeo\Queue\Jobs\JobState;
 use Fuzeo\Queue\Jobs\Origin;
 use Fuzeo\Queue\Queue;
 use Fuzeo\Queue\Runtime\Coordinator;
+use Fuzeo\Queue\Support\FrozenClock;
 use Fuzeo\Queue\Tests\Support\ProcessOrderHandler;
 use Fuzeo\Queue\Tests\Support\ProcessOrderJob;
 use Fuzeo\Queue\Worker\JobExecutor;
@@ -87,5 +90,23 @@ final class WorkerLoopTest extends TestCase
         $driver = $runtime->driver();
         self::assertInstanceOf(MemoryDriver::class, $driver);
         self::assertSame(JobState::Dead, $driver->all()[0]->state);
+    }
+
+    public function testOneShotExitsWhenEmptyEvenIfDriverAdvertisesBlockingReserve(): void
+    {
+        $driver = $this->createStub(QueueDriver::class);
+        $driver->method('capabilities')->willReturn(new DriverCapabilities(blockingReserve: true));
+        $driver->method('reserve')->willReturn(null);
+        $runtime = Coordinator::get();
+        $worker = new WorkerLoop(
+            $driver,
+            new JobExecutor($runtime->jobs()),
+            new MappedSiteSwitcher([1 => true]),
+            new WorkerOptions(sleepSeconds: 0, maxJobs: 1, maxRuntimeSeconds: 30),
+            WorkerIdentity::generate(),
+            clock: new FrozenClock(new \DateTimeImmutable('2026-01-01 00:00:00', new \DateTimeZone('UTC'))),
+        );
+        $worker->run();
+        self::assertSame(0, $worker->processed());
     }
 }

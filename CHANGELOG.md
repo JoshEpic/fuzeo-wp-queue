@@ -4,6 +4,10 @@
 
 Compatibility execution modes: persistent workers remain recommended; one-shot CLI/`tick` for external cron; optional bounded WordPress compatibility executor that uses the real Queue backend.
 
+### Fixed
+
+- One-shot workers (`sleep=0`, including compat `tick`) now exit when the queue is empty on Redis. They previously spun forever because `blocking_reserve` skipped the idle exit, which hung CI Redis PHPUnit (especially with a frozen clock).
+
 ### Added
 
 - Execution modes `persistent` / `cron_cli` / `wordpress_compat` / `none` with admin, Site Health, CLI, REST, diagnostics

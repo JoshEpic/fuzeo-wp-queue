@@ -16,7 +16,7 @@ wp fuzeo-queue tick
 `--queue` left-to-right preference is the same for MySQL and Redis. Redis workers `BLPOP` only on the **last** listed queue after polling the others.
 
 Worker registry is stored in the active backend (MySQL tables or Redis hashes), not a separate control plane.
-| `--sleep` | Idle poll delay when empty. `0` means exit when the queue is empty (non-blocking drivers). |
+| `--sleep` | Idle poll delay when empty. `0` means one-shot: exit when the queue is empty (all drivers, including Redis). |
 | `--timeout` | Soft job timeout (`pcntl_alarm` when available). |
 | `--lease` | Reservation visibility timeout. Should exceed `--timeout`. |
 | `--memory` | Graceful recycle after RSS threshold. |

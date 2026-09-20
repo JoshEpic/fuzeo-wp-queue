@@ -233,7 +233,8 @@ final class WorkerLoop
             }
             $reserved = $this->reserveNext();
             if ($reserved === null) {
-                if ($this->options->sleepSeconds === 0 && !$this->driver->capabilities()->supports('blocking_reserve')) {
+                // sleep=0 is one-shot (cron/compat). Do not wait on Redis BLPOP.
+                if ($this->options->sleepSeconds === 0) {
                     break;
                 }
                 $this->status = WorkerStatus::Idle;
