@@ -259,14 +259,21 @@ final class NativeWordPressRuntime implements WordPressRuntime
         if (!is_object($wpdb) || !method_exists($wpdb, 'get_var')) {
             return false;
         }
-        $flag = $wpdb->get_var('SELECT @@in_transaction');
-        if ($flag !== null && (int) $flag === 1) {
-            return true;
-        }
-        $trx = $wpdb->get_var(
-            'SELECT COUNT(*) FROM information_schema.innodb_trx WHERE trx_mysql_thread_id = CONNECTION_ID()'
-        );
+        $previous = method_exists($wpdb, 'suppress_errors') ? $wpdb->suppress_errors(true) : false;
+        try {
+            $flag = $wpdb->get_var('SELECT @@in_transaction');
+            if ($flag !== null && $flag !== false && (int) $flag === 1) {
+                return true;
+            }
+            $trx = $wpdb->get_var(
+                'SELECT COUNT(*) FROM information_schema.innodb_trx WHERE trx_mysql_thread_id = CONNECTION_ID()'
+            );
 
-        return is_numeric($trx) && (int) $trx > 0;
+            return is_numeric($trx) && (int) $trx > 0;
+        } finally {
+            if (method_exists($wpdb, 'suppress_errors')) {
+                $wpdb->suppress_errors((bool) $previous);
+            }
+        }
     }
 }

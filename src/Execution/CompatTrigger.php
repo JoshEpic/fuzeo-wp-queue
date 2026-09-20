@@ -20,8 +20,10 @@ final class CompatTrigger
         if (!function_exists('add_action') || !function_exists('add_filter')) {
             return;
         }
-        add_filter('cron_schedules', [self::class, 'schedules']);
-        add_action(self::HOOK, [self::class, 'handle']);
+        self::ensureSchedulesFilter();
+        if (!function_exists('has_action') || !has_action(self::HOOK, [self::class, 'handle'])) {
+            add_action(self::HOOK, [self::class, 'handle']);
+        }
         add_action('init', [self::class, 'bootReconcile'], 20);
     }
 
@@ -76,10 +78,16 @@ final class CompatTrigger
                 return;
             }
         }
+        self::ensureSchedulesFilter();
         if (wp_next_scheduled(self::HOOK) === false) {
-            wp_schedule_event(time() + 60, self::SCHEDULE, self::HOOK);
+            $scheduled = wp_schedule_event(time() + 60, self::SCHEDULE, self::HOOK);
+            if ($scheduled === false) {
+                self::markConfigured($manager, false);
+
+                return;
+            }
         }
-        self::markConfigured($manager, true);
+        self::markConfigured($manager, wp_next_scheduled(self::HOOK) !== false);
     }
 
     public static function unschedule(): void
@@ -93,6 +101,17 @@ final class CompatTrigger
     public static function isInternalHook(string $hook): bool
     {
         return $hook === self::HOOK;
+    }
+
+    private static function ensureSchedulesFilter(): void
+    {
+        if (!function_exists('add_filter')) {
+            return;
+        }
+        if (function_exists('has_filter') && has_filter('cron_schedules', [self::class, 'schedules'])) {
+            return;
+        }
+        add_filter('cron_schedules', [self::class, 'schedules']);
     }
 
     private static function markConfigured(QueueManager $manager, bool $configured): void

@@ -7,6 +7,8 @@ Compatibility execution modes: persistent workers remain recommended; one-shot C
 ### Fixed
 
 - One-shot workers (`sleep=0`, including compat `tick`) now exit when the queue is empty on Redis. They previously spun forever because `blocking_reserve` skipped the idle exit, which hung CI Redis PHPUnit (especially with a frozen clock).
+- Compatibility enable now registers the WP-Cron interval before scheduling, so `wp_schedule_event` succeeds when plugin hooks were not already loaded (WordPress PHPUnit).
+- WordPress transaction probes suppress errors on MySQL, which does not provide MariaDB’s `@@in_transaction`.
 
 ### Added
 
