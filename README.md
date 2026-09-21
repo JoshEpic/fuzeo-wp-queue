@@ -5,7 +5,7 @@ Real background job infrastructure for WordPress plugin developers.
 Durable queues, persistent workers, retries, scheduling, concurrency, observability, and more.
 
 ```bash
-composer require fuzeowp/queue:^1.2
+composer require fuzeowp/queue:^1.2.1
 ```
 
 Fuzeo Queue is a Composer library. It is not a WordPress plugin. It does not globally replace WP-Cron or Action Scheduler; 1.1+ can interoperate with both through explicit adapters and descriptors.
