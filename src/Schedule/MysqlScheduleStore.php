@@ -107,7 +107,7 @@ final class MysqlScheduleStore implements ScheduleStore
     {
         $rows = $this->connection->select(
             'SELECT * FROM ' . $this->schedules() . '
-             WHERE `enabled` = 1 AND `blocked_reason` IS NULL AND `next_run_at` <= ?
+             WHERE `enabled` = 1 AND (`blocked_reason` IS NULL OR `blocked_reason` = \'\') AND `next_run_at` <= ?
              ORDER BY `next_run_at` ASC LIMIT ' . (int) $limit,
             [Dates::toDatabase($now)]
         );

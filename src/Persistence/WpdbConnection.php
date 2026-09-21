@@ -135,11 +135,24 @@ final class WpdbConnection implements Connection
             throw new DriverException('wpdb::prepare is unavailable.');
         }
         $placeholders = [];
+        $prepareArgs = [];
         foreach ($bindings as $binding) {
-            $placeholders[] = is_int($binding) ? '%d' : '%s';
+            if ($binding === null) {
+                $placeholders[] = 'NULL';
+                continue;
+            }
+            if (is_int($binding)) {
+                $placeholders[] = '%d';
+            } else {
+                $placeholders[] = '%s';
+            }
+            $prepareArgs[] = $binding;
         }
         $withPlaceholders = $this->replaceQuestionMarks($sql, $placeholders);
-        $prepared = $this->wpdb->prepare($withPlaceholders, ...$bindings);
+        if ($prepareArgs === []) {
+            return $withPlaceholders;
+        }
+        $prepared = $this->wpdb->prepare($withPlaceholders, ...$prepareArgs);
         if (!is_string($prepared)) {
             throw new DriverException('Failed to prepare SQL statement.');
         }
